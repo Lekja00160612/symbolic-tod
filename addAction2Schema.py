@@ -15,7 +15,7 @@ from absl import app
 from absl import logging
 from absl import flags
 
-logging.set_verbosity("error")
+logging.set_verbosity("info")
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string("schema_file", None, "Schema file path.")
@@ -131,6 +131,7 @@ def generate_schema_with_action() -> AllSchemasAction:
     dialogues_dir = pathlib.Path(FLAGS.sgd_folder)
     # Iterate through every files contain dialogues
     for dialogues_file in dialogues_dir.rglob("dialogues_*.json"):
+        logging.info(f"processing {dialogues_file}")
         with open(dialogues_file, "r", encoding="utf-8") as file:
             dialogues = json.load(file)
             # Iterate through each dialogue
@@ -152,6 +153,9 @@ def generate_schema_with_action() -> AllSchemasAction:
                             if value is not None:
                                 value = action["values"][0].lower() if FLAGS.insert_space is False else re.sub(r"(\w)([A-Z])", r"\1 \2", action["values"][0]).lower() if slot == "intent" else None
                             if speaker == "user":
+                                # if dialogue["dialogue_id"] == "11_00002":
+                                #     logging.error(f"{act}_{slot}")
+                                #     logging.error(f"{possible_user_actions[domain_name]}")
                                 possible_user_actions[domain_name] = resolve_user_action(act,slot,value,possible_user_actions[domain_name])                            
                             elif speaker == "system":
                                 possible_system_actions[domain_name] = resolve_system_action(act,slot,value,possible_system_actions[domain_name])
@@ -160,6 +164,13 @@ def generate_schema_with_action() -> AllSchemasAction:
     with open(FLAGS.schema_file, "r", encoding="utf-8") as sm_file:
         for schema in json.load(sm_file):
             domain_name = schema["service_name"]
+            # Handle exceptions
+            if "Movies_1" in domain_name:
+                # In dataset, user never affirm to book tickets, so navigating in the dataset only would result in missing actions
+                possible_user_actions[domain_name].add(("inform_number_of_tickets","user informing number_of_tickets"))
+                possible_system_actions[domain_name].update([("request_number_of_tickets", ActionTemplate.SYSTEM_REQUEST.format(slot_name="number_of_tickets")),
+                                                             ("confirm_number_of_tickets", ActionTemplate.SYSTEM_CONFIRM.format(slot_name="number_of_tickets"))])
+            
             schema["possible_user_actions"] = {pair[0]: pair[1] for pair in possible_user_actions[domain_name]}
             schema["possible_system_actions"] = {pair[0]: pair[1] for pair in possible_system_actions[domain_name]}
             schemas.append(schema)
