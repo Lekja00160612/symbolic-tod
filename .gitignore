@@ -2,6 +2,7 @@
 /schema_guided_data
 /task-oriented-dialogue
 /multiwoz
+/hungarian
 schema.json
 
 # Byte-compiled / optimized / DLL files

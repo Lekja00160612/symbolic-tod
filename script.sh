@@ -19,3 +19,13 @@ python3 addAction2Schema.py \
 --sgd_folder dstc8-schema-guided-dialogue/train \
 --schema_file dstc8-schema-guided-dialogue/train/schema.json \
 --out_schema_file schema.json
+
+python3 symbolic.py \
+--sgd_file="dstc8-schema-guided-dialogue/train" \
+--schema_file="schema.json" \
+--output_file="data/train.txt" \
+--delimiter== \
+--symbolize_level=action_value \
+--level=dst \
+--data_format=full_desc \
+--multiple_choice=1a

@@ -14,6 +14,7 @@ from typing import Dict, Set, Tuple
 from absl import app
 from absl import logging
 from absl import flags
+from actionTemplate import ActionTemplate
 
 logging.set_verbosity("info")
 
@@ -27,30 +28,7 @@ flags.DEFINE_string(
 )
 flags.DEFINE_boolean("insert_space", False, "turn '_' to ' ' and add space between capitalized part")
 
-class ActionTemplate(StrEnum):
-    """
-        Default template for all possible action within a dialog
-    """
-    USER_INFORM = "user is informing {slot_name}"
-    USER_REQUEST = "user is requesting {slot_name}"
-    USER_INTENT = "user want to {intent_name}"
-    USER_AFFIRM = "user agreed to the offer"
-    USER_NEGATE = "user denied the offer"
-    USER_SELECT = "user select {slot_name}" # index_number or slot_name?
-    USER_REQUEST_ALTS = "user request alternative items"
-    USER_THANKYOU = "user thanks"
-    USER_GOODBYE = "user goodbye"
-
-    SYSTEM_INFORM = "inform {slot_name} to user"
-    SYSTEM_REQUEST = "request {slot_name} from user"
-    SYSTEM_CONFIRM = "ask to confirm value of {slot_name}"
-    SYSTEM_OFFER = "offer user {slot_or_intent_name}"
-    SYSTEM_NOTIFY_SUCCESS = "notify success to user"
-    SYSTEM_NOTIFY_FAILURE = "notify failure to user"
-    SYSTEM_QUERY = "query {domain_name} API"
-    SYSTEM_INFORMCOUNT = "inform number of items satified user"
-    SYSTEM_REQMORE = "ask user if they need anything more"
-    SYSTEM_GOODBYE = "goodbye user"
+flags.DEFINE_boolean("include_query_action", True, "whether to consider calldb as an action")
 
 SchemaAction = Set[Tuple[str,str]]
 AllSchemasAction = Dict[str, SchemaAction]
@@ -64,7 +42,7 @@ def resolve_user_action(act, slot, value, possible_user_actions):
             act_desc = ActionTemplate.USER_REQUEST.format(slot_name=slot)
         case "select":
             # TODO: replace with some other slot_name
-            act_desc = ActionTemplate.USER_SELECT.format(slot_name="" if slot == "" else slot)
+            act_desc = ActionTemplate.USER_SELECT.format(slot_name="" if slot == "" else slot).strip()
             # if slot != "":
             #     logging.warning(f"Resolver did not handle select with {slot=}")
         case "inform_intent":
@@ -164,6 +142,10 @@ def generate_schema_with_action() -> AllSchemasAction:
     with open(FLAGS.schema_file, "r", encoding="utf-8") as sm_file:
         for schema in json.load(sm_file):
             domain_name = schema["service_name"]
+            # Handle query action
+            for intent in schema["intents"]:
+                intent = intent["name"].lower()
+                possible_system_actions[domain_name].add((ActionTemplate.QUERY_NAME.format(intent_name=intent),(ActionTemplate.SYSTEM_QUERY.format(intent_name=intent))))
             # Handle exceptions
             if "Movies_1" in domain_name:
                 # In dataset, user never affirm to book tickets, so navigating in the dataset only would result in missing actions

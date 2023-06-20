@@ -70,12 +70,6 @@ flags.DEFINE_bool(
     "randomize_items", True, "If True, randomize the order of schema items."
 )
 flags.DEFINE_enum(
-    "symbolize_level",
-    "none",
-    ("none", "value", "action", "action_value", "action_id_value"),
-    "If True, s1=request {slot_id}, instead of {slot_name}.",  # TODO: add more description
-)
-flags.DEFINE_enum(
     "multiple_choice",
     "none",
     ("none", "a", "1a"),
@@ -92,11 +86,21 @@ flags.DEFINE_bool(
     False,
     "When data_percent > 0 make sure domains are (close-to) uniform distribution.",
 )
+
+# ablation study flag
+flags.DEFINE_enum(
+    "symbolize_level",
+    "none",
+    ("none", "value", "action", "action_value", "action_id_value"),
+    "If True, s1=request {slot_id}, instead of {slot_name}."  # TODO: add more description
+    "none: ",
+)
 flags.DEFINE_enum(
     "param_symbolize_level",
     "non-categorical",
-    ("non-categorical", "non-categorical", "all"),
+    ("none", "non-categorical", "all"),
     "Whether to turn normal non-categorical value into symbol."
+    "none: Do not"
     "non-categorical: Symbolize only non-categorical slot value."
     "all: Symbolize both categorical and non-categorical slot value.",
 )
