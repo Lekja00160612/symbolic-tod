@@ -9,12 +9,11 @@ from collections import defaultdict
 import re
 import json
 import pathlib
-from enum import StrEnum
 from typing import Dict, Set, Tuple
 from absl import app
 from absl import logging
 from absl import flags
-from actionTemplate import ActionTemplate
+from utils import ActionTemplate
 
 logging.set_verbosity("info")
 

@@ -1,3 +1,4 @@
+""" Template for user and system action """
 from enum import StrEnum
 
 class ActionTemplate(StrEnum):

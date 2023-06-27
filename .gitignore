@@ -3,6 +3,8 @@
 /task-oriented-dialogue
 /multiwoz
 /hungarian
+/data
+/log
 schema.json
 
 # Byte-compiled / optimized / DLL files

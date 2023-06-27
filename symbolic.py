@@ -2,253 +2,33 @@
 r"""Create text format SGD data for generative models.
 
 This is symbolic version, which generates the data format:
-
-[tasks]
-[tags]
-[params] p0=[slot0 desc] p1=[slot1 desc]... \
-[useracts] u0=[useraction0] u1=[useraction1]... u4=out of doamin \
-[sysacts] s0=[systemaction0] s1=[systemaction1]... s5=query data base s6=out of domain \
-[dependencies] u2,u3->s5; u2,s3->s6 \
-[target actions] s5 \
-[constraints] user request pi -> system inform pi; target action depend on pi -> system request pi \
-[conversation] [user] utterance [system] utterance... \t
-
-[states] p_i=[value_i] p_j=[value_j]... \
-[history] u_i u_k; s_j;... \
-[next action] s3 s4 s1\
 """
+
 import collections
 import copy
-from dataclasses import field, dataclass
 import json
 import os
 import pathlib
 import random
 import string
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 from absl import app
 from absl import flags
 from absl import logging
 
-from actionTemplate import ActionTemplate
-
+from utils import PARAMS_PREFIX, SYSTEM_ACTION_PREFIX, USER_ACTION_PREFIX
+from utils.symbolize import symbolize
+from utils.action_template import ActionTemplate
+from utils.schema_info import SchemaInfo, load_schema
+from utils.turn_info import TurnInfo
+from utils.helper import merge_domain_name, try_lowercase, try_shuffle, \
+                    is_in_domain, add_string, get_name
+import utils.flags
 logging.set_verbosity(logging.INFO)
-
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("sgd_file", None, "The SGD json file path.")
-flags.DEFINE_string("schema_file", None, "Schema file path.")
-flags.DEFINE_string("output_file", None, "Output file path.")
-flags.DEFINE_string(
-    "delimiter",
-    "=",
-    "Delimiter to separate slot/intent IDs from their descriptions or values.",
-)
-flags.DEFINE_enum(
-    "level",
-    "dst",
-    ["dst"],
-    (
-        "Which level of information should be "
-        "generated: "
-        "dst: Only generate slots for DST"
-    ),
-)
-flags.DEFINE_enum(
-    "data_format",
-    "full_desc",
-    ["full_desc", "item_name"],
-    (
-        "Format of the schemaless data:"
-        "full_desc: Use full language description as the item "
-        "description; "
-        "item_name: Use item name as the item description."
-    ),
-)
-flags.DEFINE_bool("lowercase", True, "If True, lowercase everything.")
-flags.DEFINE_bool(
-    "randomize_items", True, "If True, randomize the order of schema items."
-)
-flags.DEFINE_enum(
-    "multiple_choice",
-    "none",
-    ("none", "a", "1a"),
-    "Whether to use multiple choice prompting for categorical slots."
-    "none: Don't use multiple choice prompting. "
-    'a: Use the prompt "1: ... a) b) c)." '
-    '1a: Use the prompt "1: ... 1a) 1b) 1c)."',
-)
-flags.DEFINE_float(
-    "data_percent", 0.0, "If not 0, the percentage of data to be generated."
-)
-flags.DEFINE_bool(
-    "uniform_domain_distribution",
-    False,
-    "When data_percent > 0 make sure domains are (close-to) uniform distribution.",
-)
 
-# ablation study flag
-flags.DEFINE_enum(
-    "symbolize_level",
-    "none",
-    ("none", "value", "action", "action_value", "action_id_value"),
-    "If True, s1=request {slot_id}, instead of {slot_name}."  # TODO: add more description
-    "none: ",
-)
-flags.DEFINE_enum(
-    "param_symbolize_level",
-    "non-categorical",
-    ("none", "non-categorical", "all"),
-    "Whether to turn normal non-categorical value into symbol."
-    "none: Do not"
-    "non-categorical: Symbolize only non-categorical slot value."
-    "all: Symbolize both categorical and non-categorical slot value.",
-)
-flags.DEFINE_bool(
-    "sort_id",
-    True,
-    "Whether to sort <output> position based on id position from the input",
-)
-
-
-@dataclass
-class SchemaInfo:
-    """Schema information"""
-
-    possible_user_actions: Dict[str, str] = field(default_factory=dict)
-    possible_system_actions: Dict[str, str] = field(default_factory=dict)
-    possible_values: Dict[str, str] = field(default_factory=dict)
-    is_categorical: Dict[str, str] = field(default_factory=dict)
-    params: Dict[str, str] = field(default_factory=dict)
-    dependencies: Dict[str, str] = field(default_factory=dict)
-
-
-@dataclass
-class TurnInfo:
-    """Information extracted from dialog turns."""
-
-    out_next_actions: str = "[nextacts]"
-    out_history: str = "[history]"
-    out_states: str = "[states]"
-
-    in_params: str = "[params]"
-    in_user_actions: str = "[useracts]"
-    in_system_actions: str = "[sysacts]"
-    in_dependencies: str = "[dependencies]"
-    in_target_actions: str = "[targetacts]"  # plural for forward compatible
-    in_constraints: str = "[constraints]"
-    in_conversations: str = "[conversation]"
-
-    user_turn: bool = False
-    turn_domain: str = ""
-    dialogue_id: str = ""
-    turn_id: str = ""
-    frame_id: str = ""
-
-
-def _symbolize() -> str:
-    """
-    return string  (b24gh), -> decide which slots to change (categorical, time, number_of_people)
-    """
-    symbolized_text_list = []
-    num_parts = random.choice([1])
-    for part in range(num_parts):
-        part_text_list = []
-        num_integers = random.choice([2, 3, 4, 5])
-        for integer in range(num_integers):
-            part_text_list.append(str(random.randint(0, 9)))
-
-        num_characters = random.choice([2, 3, 4, 5])
-        for character in range(num_characters):
-            part_text_list.append(random.choice(string.ascii_letters))
-        random.shuffle(part_text_list)
-        symbolized_text_list.append("".join(part_text_list))
-    return " ".join(symbolized_text_list)
-
-
-def _merge_domain_slot(domain: str, slot_name: str):
-    return f"{domain}-{slot_name}"
-
-
-def load_schema() -> Tuple[collections.OrderedDict, SchemaInfo]:
-    """Loads schema items and descriptions.
-
-    Returns:
-      A tuple, including an ordered dictionary whose keys are slot names and
-      values are placeholder values, and a dictionary whose keys are slot names
-      and values are descriptions.
-    """
-    # We need to preserve state orders since we hope the model learns to generate
-    # states in consistent order.
-    # TODO(yuancao): We might need to do this for intents/actions as well (in case
-    # multiple intents/actions turn out to be a problem).
-    # TODO(jeffreyzhao): Clean up how we store schema information by using a
-    # dataclass.
-    slots = collections.OrderedDict()
-    item_desc = SchemaInfo()
-    with open(FLAGS.schema_file, "r", encoding="utf-8") as sm_file:
-        for schema in json.load(sm_file):
-            domain = (
-                schema["service_name"].lower()
-                if FLAGS.lowercase
-                else schema["service_name"]
-            )
-            slots.update(
-                {
-                    _merge_domain_slot(domain, slot["name"]): ""
-                    for slot in schema["slots"]
-                }
-            )
-            item_desc.params.update(
-                {
-                    _merge_domain_slot(domain, slot["name"]): slot["description"]
-                    for slot in schema["slots"]
-                }
-            )
-
-            for slot in schema["slots"]:
-                name = _merge_domain_slot(domain, slot["name"])
-                is_cat = slot["is_categorical"]
-                poss_vals = slot["possible_values"]
-
-                # If this is a categorical slot but the possible value are all numeric,
-                # consider this as a noncat slot.
-                if is_cat and all(v.isdigit() for v in poss_vals):
-                    poss_vals = []
-                    is_cat = False
-
-                item_desc.is_categorical[name] = is_cat
-                item_desc.possible_values[name] = poss_vals
-
-            item_desc.possible_system_actions.update(
-                {
-                    _merge_domain_slot(domain, f"system_{action_name}"): action_desc
-                    for action_name, action_desc in schema[
-                        "possible_system_actions"
-                    ].items()
-                }
-            )
-
-            item_desc.possible_user_actions.update(
-                {
-                    _merge_domain_slot(domain, f"user_{action_name}"): action_desc
-                    for action_name, action_desc in schema[
-                        "possible_user_actions"
-                    ].items()
-                }
-            )
-
-            item_desc.dependencies.update(
-                {
-                    _merge_domain_slot(
-                        domain,
-                        f"system_{ActionTemplate.QUERY_NAME.format(intent_name=intent['name'].lower() if FLAGS.lowercase else intent['name'])}",
-                    ): intent["required_slots"]
-                    for intent in schema["intents"]
-                }
-            )
-    return slots, item_desc
-
+MISSING_FORMAT = "{name} id not found in {desc_to_id}"
 
 def _process_user_turn(
     frame: Dict[str, Dict[str, Any]],
@@ -260,23 +40,22 @@ def _process_user_turn(
     """Updates turn_info and cumu_slots based on user turn input.
 
     Args:
-      state: A dictionary containing state info.
-      turn_info: A TurnInfo object accmulating essential info from each turn.
+      frame: A dictionary containing frame info.
+      turn_info: A TurnInfo object accmulating essential info from each turn, in form of strings.
       cumu_slots: An OrderedDict containing cmumulative slot information.
-      domain: A string, domain (service) of the turn.
       item_desc: A dictionary of items and their descriptions.
-      state_dict: A dictionary of states from the current turn.
+      state_dict: A dictionary of states from the current turn, in form of sequences.
 
     Returns:
-      A dictionary that maps slot descriptions to ids.
+      desc_to_id: A dictionary that maps params, actions, in short anything necessary descriptions to ids.
     """
     state = frame["state"]
-    domain = frame["service"].lower() if FLAGS.lowercase else frame["service"]
+    domain = try_lowercase(frame["service"])
 
     slot_values = state["slot_values"]
     domain_slot_values = {}
     for slot, value in slot_values.items():
-        domain_slot_values[_merge_domain_slot(domain, slot)] = value
+        domain_slot_values[merge_domain_name(domain, slot)] = value
     slot_values = domain_slot_values
 
     # Order of slots is preserved. Meanwhile new values of the same
@@ -287,18 +66,20 @@ def _process_user_turn(
         # cumu_slots.update({slot: " | ".join(value)})
 
     def _handle_params():
+        # Init param_name_to_id which will further be used during _handle_actions
+        # example use case
+        # p1=location of the dropping place ... s1=inform p1
         param_name_to_id = {}
         params = list(item_desc.params.keys())
-        if FLAGS.randomize_items:
-            random.shuffle(params)
+        try_shuffle(params)
         # In multi-domain turn case, desc_prefix already contains desc from the
         # previous domain.
         param_id = 0  # len(state_dict["slot_desc"])
         for param in params:
-            if domain not in param.split("-")[0]:
+            if not is_in_domain(domain, param):
                 continue
 
-            param_name = param.split("-")[1]
+            param_name = get_name(param)
             if FLAGS.data_format == "full_desc":
                 desc = item_desc.params[param]
             elif FLAGS.data_format == "item_name":
@@ -307,8 +88,7 @@ def _process_user_turn(
             # If we are generating with multiple choice, append this prompt.
             if FLAGS.multiple_choice != "none" and item_desc.is_categorical[param]:
                 possible_values = item_desc.possible_values[param]
-                if FLAGS.randomize_items:
-                    random.shuffle(possible_values)
+                try_shuffle(possible_values)
                 assert len(possible_values) < len(string.ascii_lowercase)
                 letters = list(string.ascii_lowercase)
 
@@ -318,10 +98,11 @@ def _process_user_turn(
                         possible_values_pieces.append(f"{param_id}{letter}) {value}")
                     elif FLAGS.multiple_choice == "a":
                         possible_values_pieces.append(f"{letter}) {value}")
-                desc = _add_string(desc, " ".join(possible_values_pieces))
-            _id = f"p{param_id}"
-            desc = _add_string(_id, desc, delimiter=FLAGS.delimiter)
-            turn_info.in_params = _add_string(turn_info.in_params, desc)
+                desc = add_string(desc, " ".join(possible_values_pieces))
+            _id = f"{PARAMS_PREFIX}{param_id}"
+            desc = add_string(_id, desc, delimiter=FLAGS.delimiter)
+            turn_info.in_params = add_string(turn_info.in_params, desc)
+            
             # Description prefix to be included in each turn.
             desc_to_id[param] = _id
             param_name_to_id[param_name] = _id
@@ -333,20 +114,19 @@ def _process_user_turn(
         if speaker == "user":
             acts = list(item_desc.possible_user_actions.keys())
             act_desc = item_desc.possible_user_actions
-            id_prefix = "u"
+            id_prefix = USER_ACTION_PREFIX
         elif speaker == "system":
             acts = list(item_desc.possible_system_actions.keys())
             act_desc = item_desc.possible_system_actions
-            id_prefix = "s"
+            id_prefix = SYSTEM_ACTION_PREFIX
         else:
             logging.fatal(f"Unavailble speaker: {speaker}")
 
-        if FLAGS.randomize_items:
-            random.shuffle(acts)
+        try_shuffle(acts)
 
         act_id = 0
         for act in acts:
-            if domain not in act.split("-")[0]:
+            if not is_in_domain(domain, act):
                 continue
 
             if FLAGS.data_format == "full_desc":
@@ -361,14 +141,14 @@ def _process_user_turn(
                         )
 
             elif FLAGS.data_format == "item_name":
-                desc = act.split("-")[1]
+                desc = get_name(act)
             _id = f"{id_prefix}{act_id}"
-            desc = _add_string(_id, desc, delimiter=FLAGS.delimiter)
+            desc = add_string(_id, desc, delimiter=FLAGS.delimiter)
 
             if speaker == "user":
-                turn_info.in_user_actions = _add_string(turn_info.in_user_actions, desc)
+                turn_info.in_user_actions = add_string(turn_info.in_user_actions, desc)
             elif speaker == "system":
-                turn_info.in_system_actions = _add_string(
+                turn_info.in_system_actions = add_string(
                     turn_info.in_system_actions, desc
                 )
 
@@ -378,7 +158,7 @@ def _process_user_turn(
             pass
         elif speaker == "system":
             for dependency in item_desc.dependencies.keys():
-                if domain not in dependency.split("-")[0]:
+                if not is_in_domain(domain,dependency):
                     continue
                 if dependency in desc_to_id:
                     continue
@@ -386,7 +166,7 @@ def _process_user_turn(
                 #     logging.fatal(f"{dependency}")
                 desc = f"{_id}={ActionTemplate.SYSTEM_QUERY.format(intent_name=dependency.split('-')[1])}"
                 _id = f"s{act_id}"
-                turn_info.in_system_actions = _add_string(
+                turn_info.in_system_actions = add_string(
                     turn_info.in_system_actions, desc
                 )
                 desc_to_id[dependency] = _id
@@ -417,10 +197,10 @@ def _process_user_turn(
                         raise Exception
                     depend_variables_id.append(_id)
                 except Exception:
-                    logging.error(f"{actions} id does not exist")
+                    logging.fatal(MISSING_FORMAT.format(name=action,desc_to_id=desc_to_id))
             desc = f"{', '.join(depend_variables_id)} -> {desc_to_id[dependency]}"
             depend_desc.append(desc)
-        turn_info.in_dependencies = _add_string(
+        turn_info.in_dependencies = add_string(
             turn_info.in_dependencies, "; ".join(depend_desc)
         )
 
@@ -428,41 +208,40 @@ def _process_user_turn(
         intent = state["active_intent"]
         # No active intent
         if intent == "NONE":
-            turn_info.in_target_actions = _add_string(
+            turn_info.in_target_actions = add_string(
                 turn_info.in_target_actions, "none"
             )
             return
-        intent = intent.lower() if FLAGS.lowercase else intent
-        intent = _merge_domain_slot(
+        intent = try_lowercase(intent)
+        intent = merge_domain_name(
             domain, f"system_{ActionTemplate.QUERY_NAME.format(intent_name=intent)}"
         )
         try:
             _id = desc_to_id[intent]
         except Exception:
-            logging.error(f"{intent} not found id")
-        turn_info.in_target_actions = _add_string(turn_info.in_target_actions, _id)
+            logging.fatal(MISSING_FORMAT.format(name=intent, desc_to_id=desc_to_id))
+        turn_info.in_target_actions = add_string(turn_info.in_target_actions, _id)
 
     def _handle_constraints():
         constraints = [
             "user request p_i -> system inform p_i",
-            "target action depend on p_i -> system request p_i",
+            "(user inform p_i -> target actions)  -> system request p_i",
         ]
-        if FLAGS.randomize_items:
-            random.shuffle(constraints)
-        turn_info.in_constraints = _add_string(
+        try_shuffle(constraints)
+        turn_info.in_constraints = add_string(
             turn_info.in_constraints, "; ".join(constraints)
         )
 
     def _handle_states_and_conversation():
         desc = []
         for slot, slot_values in state["slot_values"].items():
-            slot = _merge_domain_slot(domain, slot)
+            slot = merge_domain_name(domain, slot)
             slot_value = slot_values[0]
             slot_value = slot_value.lower() if FLAGS.lowercase else slot_value
             try:
                 _id = desc_to_id[slot]
             except Exception:
-                logging.error(f"{slot} not found id")
+                logging.fatal(MISSING_FORMAT.format(name=slot, desc_to_id=desc_to_id))
             desc.append((_id, slot_value, item_desc.is_categorical[slot]))
         if FLAGS.sort_id is True:
             desc.sort(key=lambda x: x[0])
@@ -477,7 +256,7 @@ def _process_user_turn(
                     and FLAGS.param_symbolize_level == "non-categorical"
                 ):
                     continue
-                symbolize_value = _symbolize()
+                symbolize_value = symbolize()
                 desc[index] = (param_id, symbolize_value)
                 logging.debug(f"{param[1]} is replaced with {symbolize_value}")
 
@@ -493,10 +272,10 @@ def _process_user_turn(
                 conversation = list(map(_replace_symbolic, conversation))
         conversation = list(map(lambda x: f"[{x[0]}] {x[1]}", conversation))
         desc = map(lambda x: f"{x[0]}={x[1]}", desc)
-        turn_info.in_conversations = _add_string(
+        turn_info.in_conversations = add_string(
             turn_info.in_conversations, " ".join(conversation)
         )
-        turn_info.out_states = _add_string(turn_info.out_states, " ".join(desc))
+        turn_info.out_states = add_string(turn_info.out_states, " ".join(desc))
 
     def _handle_history():
         actions = []
@@ -504,36 +283,33 @@ def _process_user_turn(
             act = action["act"].lower() if FLAGS.lowercase else action["act"]
             slot = action["slot"].lower() if FLAGS.lowercase else action["slot"]
             if slot == "":
-                actions.append(_merge_domain_slot(domain, f"user_{act}"))
+                actions.append(merge_domain_name(domain, f"user_{act}"))
             elif slot == "intent":
                 # only use when the action is related to intent
                 value = action["values"][0].lower() if slot == "intent" else None
-                actions.append(_merge_domain_slot(domain, f"user_{act}_{value}"))
+                actions.append(merge_domain_name(domain, f"user_{act}_{value}"))
             else:
-                actions.append(_merge_domain_slot(domain, f"user_{act}_{slot}"))
+                actions.append(merge_domain_name(domain, f"user_{act}_{slot}"))
         state_dict["history"].append(actions)
 
         desc_list = []
         for actions in state_dict["history"]:
             action_ids = []
             for action in actions:
-                action = action.lower() if FLAGS.lowercase else action
+                action = try_lowercase(action)
                 try:
                     _id = desc_to_id[action]
                     action_ids.append(_id)
                 except Exception:
-                    logging.error(f"{action} not found")
+                    logging.fatal(MISSING_FORMAT.format(name=action,desc_to_id=desc_to_id))
             desc = " ".join(action_ids)
             desc_list.append(desc)
         logging.debug(
             f"{len(state_dict['history'])}, {turn_info.out_history} {'; '.join(desc_list)}"
         )
-        turn_info.out_history = _add_string(turn_info.out_history, "; ".join(desc_list))
+        turn_info.out_history = add_string(turn_info.out_history, "; ".join(desc_list))
 
-    def _handle_next_actions():
-        # will be handle during system turn
-        pass
-
+    ### Main loop start here
     # Clean up.
     desc_to_id = {}
     example_turn_info = TurnInfo()
@@ -549,6 +325,7 @@ def _process_user_turn(
     turn_info.out_states = example_turn_info.out_states
     turn_info.in_conversations = example_turn_info.in_conversations
 
+    # hanle input
     param_name_to_id = _handle_params()
     _handle_acts("user", param_name_to_id)
     _handle_acts("system", param_name_to_id)
@@ -556,17 +333,15 @@ def _process_user_turn(
     _handle_target_acts()
     _handle_constraints()
 
+    # handle output
     _handle_states_and_conversation()
     _handle_history()
-    _handle_next_actions()
     return desc_to_id, turn_info
 
 
 def _process_agent_turn(
     frame: Dict[str, Dict[str, Any]],
     turn_info: TurnInfo,
-    cumu_slots: collections.OrderedDict,
-    item_desc: SchemaInfo,
     state_dict: Dict[str, List[str]],
     desc_to_id: Dict[str, str],
 ) -> None:
@@ -578,54 +353,57 @@ def _process_agent_turn(
       domain: A string, domain (service) of the current turn.
       desc_to_slot_id: A dictionary that maps descriptions to slot ids.
     """
-    domain = frame["service"].lower() if FLAGS.lowercase else frame["service"]
+    domain = try_lowercase(frame["service"])
 
     def _handle_next_action_and_history():
         eliminate_acts = []
         next_actions = []
+        # During service call, system will offer multiple slots,
+        # however we want our system to stop at service calling and nothing further
+        # therefore it is necessary to eliminate all offer actions within this turn system actions
+        # and replace them with only one action - db call.
         if frame.get("service_call", None):
             eliminate_acts.append("offer")
             method_name = frame["service_call"]["method"]
             method_name = method_name.lower() if FLAGS.lowercase else method_name
-            query_action = _merge_domain_slot(
+            query_action = merge_domain_name(
                 domain,
                 f"system_{ActionTemplate.QUERY_NAME.format(intent_name=method_name)}",
             )
             next_actions.append(query_action)
 
+        # We only eliminate offer action, all inform or request are kept as they are
         for action in frame["actions"]:
-            act = action["act"].lower() if FLAGS.lowercase else action["act"]
+            act = try_lowercase(action["act"])
             # eliminate
             if act in eliminate_acts:
                 continue
-            slot = action["slot"].lower() if FLAGS.lowercase else action["slot"]
+            slot = try_lowercase(action["slot"])
+
+            # resolve no slot actions aka. select, greeting, goodbye, ...
             if slot == "":
-                next_actions.append(_merge_domain_slot(domain, f"system_{act}"))
+                next_actions.append(merge_domain_name(domain, f"system_{act}"))
+            # resolve intent as our system do not have intent, this is considered an action
             elif slot == "intent":
                 # only use when the action is related to intent
-                value = action["values"][0].lower() if slot == "intent" else None
-                next_actions.append(_merge_domain_slot(domain, f"system_{act}_{value}"))
+                value = try_lowercase(action["values"][0])
+                next_actions.append(merge_domain_name(domain, f"system_{act}_{value}"))
+            # resolve normal actions cases (request, inform) which normally have slot values
             else:
-                next_actions.append(_merge_domain_slot(domain, f"system_{act}_{slot}"))
+                next_actions.append(merge_domain_name(domain, f"system_{act}_{slot}"))
         state_dict["history"].append(next_actions)
 
         for action in next_actions:
             try:
-                turn_info.out_next_actions = _add_string(
+                turn_info.out_next_actions = add_string(
                     turn_info.out_next_actions, desc_to_id[action]
                 )
             except Exception:
-                # print(desc_to_id)
-                logging.error(f"Cannot resolve {action} to id")
+                logging.fatal(MISSING_FORMAT.format(name=action,desc_to_id=desc_to_id))
 
     _handle_next_action_and_history()
 
     return desc_to_id, turn_info
-
-
-def _add_string(lhs: str, rhs: str, delimiter: str = " "):
-    return delimiter.join([str(lhs), str(rhs)])
-
 
 def process_turn(
     turn: Dict[str, Any],
@@ -657,10 +435,22 @@ def process_turn(
     utterance = turn["utterance"]
     utterance = utterance.lower() if FLAGS.lowercase else utterance
     state_dict["conversation"].append((speaker, utterance))
-    if FLAGS.lowercase:
-        turn_info.in_conversations = turn_info.in_conversations.lower()
+    turn_info.in_conversations = try_lowercase(turn_info.in_conversations)
 
     turn_info_per_frame = []
+    
+    # Examine multi domain example during data exploration
+    if len(turn["frames"]) > 1:
+        acts = []
+        for frame in turn['frames']:
+            [acts.append(action['act'].lower()) for action in frame['actions']]
+        # Check whether `inform_intent` exist in actions of any frame
+        if "inform_intent" not in acts or len(turn["frames"]) > 2:
+            logging.warning(f"{turn_info.dialogue_id} {turn_id}")
+            logging.warning(f"{state_dict['conversation'][-2:]}")
+            for frame in turn['frames']:        
+                logging.warning(f"<{frame['service']}>: {[action['act'] for action in frame['actions']]}")
+    return {}, []
     for frame_id, frame in enumerate(turn["frames"]):
         # Multi-service turns are possible, each frame corresponds to one
         # service (domain).
@@ -674,7 +464,7 @@ def process_turn(
             )
         else:
             desc_to_id, turn_info = _process_agent_turn(
-                frame, turn_info, cumu_slots, item_desc, state_dict, desc_to_id
+                frame, turn_info, state_dict, desc_to_id
             )
 
         turn_info_per_frame.append(copy.deepcopy(turn_info))
@@ -784,18 +574,25 @@ def generate_data(ordered_slots, item_desc):
         sgd_folder = pathlib.Path(FLAGS.sgd_file)
         for sgd_file in sgd_folder.rglob("dialogues_*.json"):
             logging.info(f"processing {sgd_file}")
+            if not any([str(number) in str(sgd_file) for number in range(44,128)]):
+                continue
             with open(sgd_file, "r", encoding="utf-8") as sgd_in:
                 for dlg in json.load(sgd_in):
-                    if len(dlg["services"]) > 1:
-                        dialogue_id = dlg["dialogue_id"]
-                        logging.warning(f"Skipping file {dialogue_id.split('_')[0]}")
-                        break
+                    # if len(dlg["services"]) > 1:
+                    #     dialogue_id = dlg["dialogue_id"]
+                    #     logging.warning(f"Skipping file {dialogue_id.split('_')[0]}")
+                    #     break
                     # Cumulative states throughout this dialog.
                     cumu_slots = copy.deepcopy(ordered_slots)
                     turn_info = TurnInfo()
                     desc_to_id = {}
-                    state_dict = {"history": [], "conversation": []}  # TODO: clean up
+                    state_dict = {"history": [], "conversation": []}
                     turn_info.dialogue_id = dlg["dialogue_id"]
+
+                    # # Check maximum number of services 
+                    # services = dlg["services"]
+                    # if len(services) > 2:
+                    #     logging.warning(f"{turn_info.dialogue_id} has {len(services)} services ({services})")
                     for turn_idx, turn in enumerate(dlg["turns"]):
                         desc_to_id, per_frame_turn_info = process_turn(
                             turn,
@@ -811,13 +608,14 @@ def generate_data(ordered_slots, item_desc):
 
                 write_examples(example_filter(all_turns_per_frame), out_file)
 
-
 def main(_):
     slots, item_desc = load_schema()
     generate_data(slots, item_desc)
 
-
 if __name__ == "__main__":
+    if not os.path.exists('./log'):
+        os.makedirs('./log')
+    logging.get_absl_handler().use_absl_log_file('absl_logging', './log')
     flags.mark_flag_as_required("sgd_file")
     flags.mark_flag_as_required("schema_file")
     flags.mark_flag_as_required("output_file")
