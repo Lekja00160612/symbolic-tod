@@ -28,4 +28,5 @@ python3 symbolic.py \
 --symbolize_level=action_value \
 --level=dst \
 --data_format=full_desc \
---multiple_choice=1a
+--multiple_choice=1a \
+--alsologtostderr

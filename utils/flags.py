@@ -62,12 +62,12 @@ flags.DEFINE_enum(
     "If True, s1=request {slot_id}, instead of {slot_name}."  # TODO: add more description
     "none: ",
 )
+
 flags.DEFINE_enum(
     "param_symbolize_level",
     "non-categorical",
-    ("none", "non-categorical", "all"),
+    ("non-categorical", "all"),
     "Whether to turn normal non-categorical value into symbol."
-    "none: Do not"
     "non-categorical: Symbolize only non-categorical slot value."
     "all: Symbolize both categorical and non-categorical slot value.",
 )

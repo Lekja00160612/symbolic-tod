@@ -7,7 +7,7 @@ import json
 from absl import flags
 
 from utils import ActionTemplate
-from utils.helper import merge_domain_name
+from utils.helper import merge_domain_name, try_lowercase
 
 FLAGS = flags.FLAGS
 
@@ -94,9 +94,12 @@ def load_schema() -> Tuple[collections.OrderedDict, SchemaInfo]:
                 {
                     merge_domain_name(
                         domain,
-                        f"system_{ActionTemplate.QUERY_NAME.format(intent_name=intent['name'].lower() if FLAGS.lowercase else intent['name'])}",
+                        f"system_{ActionTemplate.KEY_SYSTEM_QUERY.format(intent_name=try_lowercase(intent['name']))}",
                     ): intent["required_slots"]
                     for intent in schema["intents"]
                 }
             )
     return slots, item_desc
+
+if __name__=="__main__":
+    print(load_schema()[1].dependencies)
