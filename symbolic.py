@@ -1,3 +1,4 @@
+
 # pytype: skip-file
 r"""Create text format SGD data for generative models.
 
