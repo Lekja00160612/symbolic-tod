@@ -1,10 +1,10 @@
-
 # pytype: skip-file
 r"""Create text format SGD data for generative models.
 
 This is symbolic version, which generates the data format:
 """
 
+import pdb
 import copy
 import json
 import os
@@ -58,11 +58,11 @@ class TurnProcessor:
         speaker: str,
         turn_id: int,
         dialogue_id: int,
-        frames,
-        domain_frame,
+        frames: Dict[str, Any],
+        domain_frame: Dict[str, Any],
         item_desc: SchemaInfo,
-        state_dict,
-        desc_to_id,
+        state_dict: Dict[str, Any],
+        desc_to_id: Dict[str, str],
     ):
         self.speaker = speaker
         self.turn_id = turn_id
@@ -74,6 +74,8 @@ class TurnProcessor:
         if speaker == "user":
             self.state = self.frame["state"]
         # Name of currenty process domain
+
+        # TODO: enforce frame['service'] data to be cleaned beforehand
         self.domain = try_lowercase(self.frame["service"])
 
         # Save information from schema
@@ -97,12 +99,15 @@ class TurnProcessor:
         param_to_id = {}
         param_desc = str()
         params = list(self.item_desc.params.keys())
+
+        # TODO: replace absl flag with a boolean param
         try_shuffle(params)
         for param_id, param in enumerate(params):
             if not is_in_domain(self.domain, param):
                 continue
 
             param_name = get_name(param)
+            # TODO: replace absl flag with a str param
             match FLAGS.data_format:
                 case "full_desc":
                     desc = self.item_desc.params[param]
@@ -112,21 +117,27 @@ class TurnProcessor:
             # If we are generating with multiple choice
             # and param is categorical, append choices.
             # Example: 3a=balance 3b=credit
+
+            # TODO: replace absl flag with a str param
             if FLAGS.multiple_choice != "none" and self.item_desc.is_categorical[param]:
                 possible_values = self.item_desc.possible_values[param]
+                # TODO: replace absl flag with a boolean param
                 try_shuffle(possible_values)
                 assert len(possible_values) < len(string.ascii_lowercase)
                 letters = list(string.ascii_lowercase)
 
                 possible_values_pieces = []
                 for letter, value in zip(letters, possible_values):
+                    # TODO: replace absl flag with a str param
                     if FLAGS.multiple_choice == "1a":
                         possible_values_pieces.append(f"{param_id}{letter}) {value}")
+            # TODO: replace absl flag with a str param
                     elif FLAGS.multiple_choice == "a":
                         possible_values_pieces.append(f"{letter}) {value}")
                 desc = add_string(desc, " ".join(possible_values_pieces))
 
             _id = f"{PARAMS_PREFIX}{param_id}"
+            # TODO: replace absl flag with a str param
             desc = add_string(_id, desc, delimiter=FLAGS.delimiter)
             param_desc = add_string(param_desc, desc, delimiter="; ")
 
@@ -173,12 +184,15 @@ class TurnProcessor:
                 empty_ids.append(action_id)
                 continue
 
+            # TODO: replace absl flag with a str param
             match FLAGS.data_format:
                 case "full_desc":
                     desc = possible_actions[action]
                     # Checking if action need to resolve param_id
                     if (
                         # if symbolize_level include symbolize action
+
+                        # TODO: replace absl flag with a list param
                         "action" in FLAGS.symbolize_level
                         # and action is in one of SLOT_CONTEXT_ACTIONS
                         and any(
@@ -210,6 +224,7 @@ class TurnProcessor:
 
             _id = f"{id_prefix}{action_id}"
             self.desc_to_id[action] = _id
+            # TODO: replace absl flag with a list param
             desc = add_string(_id, desc, delimiter=FLAGS.delimiter)
             action_desc.append((_id, desc))
 
@@ -220,9 +235,11 @@ class TurnProcessor:
             empty_ids.remove(action_id)
             _id = f"{id_prefix}{action_id}"
             self.desc_to_id[ood_action] = _id
+            # TODO: replace absl flag with a list param
             desc = add_string(_id, ood_desc, delimiter=FLAGS.delimiter)
             action_desc.append((_id, desc))
 
+        # TODO: replace absl flag with a bool param
         try_sort_id(action_desc)
         action_desc = "; ".join(x[1] for x in action_desc)
         logging.debug(action_desc)
@@ -248,6 +265,7 @@ class TurnProcessor:
             - str - dependencies_desc: Contains all formatted dependencies, then append to <tag>
         """
         dependencies = list(self.item_desc.dependencies.keys())
+        # TODO: replace absl flag with a bool param
         try_shuffle(dependencies)
         dependency_desc = []
         for dependency in dependencies:
@@ -275,6 +293,7 @@ class TurnProcessor:
                     logging.fatal(
                         f"{exception}: {MISSING_FORMAT.format(name=action_name, desc_to_id=self.desc_to_id)}"
                     )
+        # TODO: replace absl flag with a bool param
             try_sort_id(depend_variable_ids)
             desc = f"{', '.join(depend_variable_ids)} -> {self.desc_to_id[dependency]}"
             dependency_desc.append(desc)
@@ -294,6 +313,7 @@ class TurnProcessor:
         Return:
             - str - targetacts_desc: Contains all formatted target_actions, then append to <tag>
         """
+        # TODO: replace absl flag with a bool param
         intent = try_lowercase(self.state["active_intent"])
         # No active intent
         target_desc = str()
@@ -333,6 +353,7 @@ class TurnProcessor:
             "target actions depend on param x and user did not inform, system request param x",
             "after offer an item and user like the item, offer user to purchase",
         ]
+        # TODO: replace absl flag with a bool param
         try_shuffle(constraints)
         constrain_desc = "; ".join(constraints)
         logging.debug(constrain_desc)
@@ -360,6 +381,7 @@ class TurnProcessor:
         desc = []
         for slot, slot_values in self.state["slot_values"].items():
             slot = merge_domain_name(self.domain, slot)
+        # TODO: replace absl flag with a bool param
             slot_value = try_lowercase(slot_values[0])
             try:
                 _id = self.desc_to_id[slot]
@@ -370,9 +392,11 @@ class TurnProcessor:
                 )
             desc.append((_id, slot_value, is_categorical))
 
+        # TODO: replace absl flag with a bool param
         try_sort_id(desc)
         conversation = self.state_dict["conversation"]
 
+            # TODO: replace absl flag with a str param
         if "value" in str(FLAGS.symbolize_level):
             # Symbolize value and replace that value with a generated symbol in conversation
             for index, param in enumerate(desc):
@@ -380,6 +404,7 @@ class TurnProcessor:
                 # if param is categorical and param_symbolize_level is non-categorical
                 if (
                     param_is_categorical
+            # TODO: replace absl flag with a str param
                     and FLAGS.param_symbolize_level == "non-categorical"
                 ):
                     continue
@@ -445,9 +470,12 @@ class TurnProcessor:
             self.state_dict["active_intent"].append(defaultdict(lambda: {}))
             for frame in self.frames:
                 domain_next_actions = []
+        # TODO: replace absl flag with a bool param
                 domain = try_lowercase(frame["service"])
                 for action in frame["actions"]:
+        # TODO: replace absl flag with a bool param
                     act = try_lowercase(action["act"])
+        # TODO: replace absl flag with a bool param
                     slot = try_lowercase(action["slot"])
                     # No slot action (greeting, select, ...)
                     if slot == "" or slot == "count":
@@ -455,6 +483,7 @@ class TurnProcessor:
                     # Intent related action
                     elif slot == "intent":
                         value = (
+        # TODO: replace absl flag with a bool param
                             try_lowercase(action["values"][0])
                             if slot == "intent"
                             else None
@@ -470,9 +499,11 @@ class TurnProcessor:
                     elif "negate_intent" in action:
                         action = action.replace("negate_intent", "negate")
                     domain_next_actions.append(
+        # TODO: replace absl flag with a bool param
                         try_lowercase(merge_domain_name(domain, action))
                     )
                 if self.speaker == "user":
+        # TODO: replace absl flag with a bool param
                     self.state_dict["active_intent"][-1][domain] = try_lowercase(
                         frame["state"]["active_intent"]
                     )
@@ -528,6 +559,7 @@ class TurnProcessor:
                 # if there is no service call in current system turn,
                 # assume to call the last user turn active intent
                 method_name = (
+        # TODO: replace absl flag with a bool param
                     try_lowercase(self.frame["service_call"]["method"])
                     if service_call
                     else self.state_dict["active_intent"][-2][
@@ -560,6 +592,7 @@ class TurnProcessor:
                         )
             # If action_ids is empty next actions is none
             if action_ids:
+        # TODO: replace absl flag with a bool param
                 try_sort_id(action_ids, based_index=-1)
                 next_actions_desc = " ".join(action_ids)
             # If action_ids is empty, the domain transition is taking place
@@ -603,6 +636,7 @@ class TurnProcessor:
                                 #     ]
                                 # ),
                             )
+        # TODO: replace absl flag with a bool param
                 try_sort_id(action_ids, based_index=-1)
                 desc = ", ".join(action_ids)
                 history_desc.append(desc)
@@ -687,7 +721,9 @@ def process_turn(
       Prefix string (item descriptions) from the current turn and per-frame
       TurnInfo objects.
     """
+        # TODO: replace absl flag with a bool param
     speaker = try_lowercase(turn["speaker"])
+        # TODO: replace absl flag with a bool param
     utterance = try_lowercase(turn["utterance"])
     state_dict["conversation"].append((speaker, utterance))
 
@@ -775,6 +811,7 @@ def write_examples(turn_list: List[TurnInfo], out_file) -> None:
         # second part are labels for prediction.
         input_text = ""
         output_text = ""
+            # TODO: replace absl flag with a str param
         if FLAGS.level == "dst":
             if not turn_info.user_turn:
                 # Only output at user turns.
@@ -787,6 +824,7 @@ def write_examples(turn_list: List[TurnInfo], out_file) -> None:
                 f"{input_text}\t{output_text}\t"
                 + f"{turn_info.dialogue_id}\t{turn_info.turn_id}\t{turn_info.frame_id}"
             )
+            # TODO: replace absl flag with a str param
             if FLAGS.lowercase:
                 example = example.lower()
 
@@ -806,11 +844,15 @@ def example_filter(turn_list: List[TurnInfo]):
       Specified percentage of examples, with uniform domain distribution if
       needed.
     """
+            # TODO: replace absl flag with a str param
     if FLAGS.data_percent == 0.0:
         return turn_list
 
+            # TODO: replace absl flag with a str param
     out_sample_num = int(len(turn_list) * FLAGS.data_percent)
+            # TODO: replace absl flag with a str param
     if not FLAGS.uniform_domain_distribution:
+            # TODO: replace absl flag with a str param
         if FLAGS.randomize_items:
             random.shuffle(turn_list)
         return turn_list[:out_sample_num]
@@ -843,6 +885,7 @@ def example_filter(turn_list: List[TurnInfo]):
             )
             consumed_examples[domain_id] += 1
 
+            # TODO: replace absl flag with a str param
         if FLAGS.randomize_items:
             random.shuffle(uniform_turn_list)
 
@@ -857,8 +900,10 @@ def preprocess_dialogues(dialogues):
         for turn_index, turn in enumerate(dialogue["turns"]):
             previous_domains = current_domains
             current_domains = set()
+        # TODO: replace absl flag with a bool param
             speaker = try_lowercase(turn["speaker"])
             for frame in turn["frames"]:
+        # TODO: replace absl flag with a bool param
                 current_domains.add(try_lowercase(frame["service"]))
             if current_domains == previous_domains:
                 continue
@@ -901,11 +946,15 @@ def generate_data(ordered_slots, item_desc):
       ordered_slots: An ordered dictionary containing slot names.
       item_desc: A dictionary containing items and their descriptions.
     """
+            # TODO: replace absl flag with a str param
     if not os.path.isdir(os.path.dirname(FLAGS.output_file)):
+            # TODO: replace absl flag with a str param
         os.makedirs(os.path.dirname(FLAGS.output_file))
+            # TODO: replace absl flag with a str param
     with open(FLAGS.output_file, "w", encoding="utf-8") as out_file:
         all_turns_per_frame = []
 
+            # TODO: replace absl flag with a str param
         sgd_folder = pathlib.Path(FLAGS.sgd_file)
         for sgd_file in sgd_folder.rglob("dialogues_*.json"):
             logging.info(f"processing {sgd_file}")
