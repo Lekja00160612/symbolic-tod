@@ -2,18 +2,37 @@
 from enum import StrEnum
 from absl import logging
 
-SLOT_CONTEXT_ACTIONS = ["inform", "request", "confirm"]
-NON_SLOT_CONTEXT_ACTIONS = ["inform_intent", "request_alts", "inform_count"]
-DEPENDENCIES_ACTIONS = ["user_inform", "system_offer", "system_confirm"]
+SLOT_CONTEXT_ACTIONS = ["inform", "request", "confirm", "offer"]
+NON_SLOT_CONTEXT_ACTIONS = [
+    "inform_intent",
+    "request_alts",
+    "inform_count",
+    "offer_intent",
+]
 
-NEXTACTS_ELIMINATE_ACTIONS = [
+DEPENDENCIES_ACTIONS = ["user_inform"]
+TRANSACTIONAL_DEPENDENCIES_ACTIONS = ["system_confirm", "system_offer"]
+
+NEXTACTS_ELIMINATE_ACTIONS_QUERY_RELATED = [
     "offer",
     "notify_failure",
     "notify_success",
     "inform_count",
-    # exclude "offer_intent"
 ]
-NEXTACTS_EXCLUDE_ELIMINATE_ACTIONS = ["offer_intent"]
+NEXTACTS_ELIMINATE_ACTIONS = ["offer_intent"]
+
+NONE_ACT = str()
+LOOKUP_INTENTS = ["find", "search", "get"]
+PURCHASE_INTENTS = [
+    "buy",
+    "book",
+    "add",
+    "reserve",
+    "schedule",
+    "play",
+    "transfer",
+    "get",
+]
 
 
 class OODTemplate(StrEnum):

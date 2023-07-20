@@ -240,7 +240,7 @@ class TurnProcessor:
               Foreach required_slot, we try:
                 1. user_inform_<required_slot>
                 2. system_offer_<required_slot>
-                3. system_confirm_<required_slot>
+                3. system_confirm_<required_slot>, Only happen if the action is transactional
               (1), (2) exist because <required_slot> must come from either system offer or user inform
               (3) exists because transactional query need confirmation before proceed
         Return:
@@ -254,27 +254,28 @@ class TurnProcessor:
                 continue
 
             depend_variable_ids = []
+            dependency_actions = DEPENDENCIES_ACTIONS
+            if self.item_desc.is_transactional[dependency] is True:
+                dependency_actions = (
+                    DEPENDENCIES_ACTIONS + TRANSACTIONAL_DEPENDENCIES_ACTIONS
+                )
+
             for required_slot in self.item_desc.dependencies[dependency]:
-                try:
-                    actions = []
-                    for dependency_action in DEPENDENCIES_ACTIONS:
-                        action_name = (
-                            f"{self.domain}-{dependency_action}_{required_slot}"
-                        )
-                        actions.append(action_name)
-                        # If not getting the id, this bahavior is normal as DEPENDENCIES_ACTIONS
-                        # only contain suspicious actions, not always appear in possible_actions
-                        _id = self.desc_to_id.get(action_name, None)
-                        if _id is not None:
-                            depend_variable_ids.append(_id)
-                    # Must be atleast one action matches the context
-                    if len(depend_variable_ids) == 0:
-                        raise Exception(f"{actions}")
-                except Exception as exception:
+                actions = []
+                for dependency_action in dependency_actions:
+                    action_name = f"{self.domain}-{dependency_action}_{required_slot}"
+                    actions.append(action_name)
+                    # If not getting the id, this bahavior is normal as DEPENDENCIES_ACTIONS
+                    # only contain suspicious actions, not always appear in possible_actions
+                    _id = self.desc_to_id.get(action_name, None)
+                    if _id is not None:
+                        depend_variable_ids.append(_id)
+                # Must be atleast one action matches the context
+                if len(depend_variable_ids) == 0:
                     logging.fatal(
-                        f"{exception}: {MISSING_FORMAT.format(name=action_name, desc_to_id=self.desc_to_id)}"
+                        f"Non action exist in context: {actions} not found {MISSING_FORMAT.format(name=action_name, desc_to_id=self.desc_to_id)}"
                     )
-            try_sort_id(depend_variable_ids)
+            try_sort_id(depend_variable_ids, based_index=-1)
             desc = f"{', '.join(depend_variable_ids)} -> {self.desc_to_id[dependency]}"
             dependency_desc.append(desc)
         dependency_desc = "; ".join(dependency_desc)
@@ -289,7 +290,7 @@ class TurnProcessor:
         Rule:
             - targetacts is defined as query_action_id of current active intent,
               in this dataset, only a action is activated at one time
-            - each targetact is formatted as "<targetact_id>", there might be turns have no target actions, <targetacts> = none
+            - each targetact is formatted as "<targetact_id>", there might be turns have no target actions, <targetacts> = NONE_ACT
         Return:
             - str - targetacts_desc: Contains all formatted target_actions, then append to <tag>
         """
@@ -297,7 +298,7 @@ class TurnProcessor:
         # No active intent
         target_desc = str()
         if intent == "none":
-            target_desc += "none"
+            target_desc += NONE_ACT
         # Available active intent
         else:
             intent = merge_domain_name(
@@ -424,11 +425,14 @@ class TurnProcessor:
             For <nextacts>:
             - <nextacts> contains action_ids for the next turn, harvest during process system turn
               System-turn's actions is previous user-turn next_actions
-            - If the next actions list contain any "offer_<slot>", "notify_<failure/success>" or "inform_count"
+            - If the next actions list contain any "offer_<slot>", "notify_<failure/success>", "inform_count"
               remove those actions and replace by query the active intent as in practice, we do not know the
               query result yet during this stage, we only know we must query
+            - Remove "offer_intent" as we want to let dialogue manager to decide what to do next, afterall, the next actions
+              are just for recommending
             - Each actions is formatted as "<action_id>", seperate by ","
-            - There are turns that have no actions due to domain transition, if then <nextacts> = none
+            - There are turns that have no actions due to domain transition, if then <nextacts> = NONE_ACT
+            - During transition turn, new domain actions will not be recognize
         Return:
             if user_turn:
             - str - history_desc: Contains all formatted history actions
@@ -508,14 +512,16 @@ class TurnProcessor:
                 for action in next_actions_desc
                 if (
                     # eliminate if action in any of "offer", "notify", "notify_success", "notify_failure", "inform_count"
+                    # "offer_intent" is a controversial decision, should dialogue manager take care of this or the state tracker?
+                    # for the sake of sanity, in this experiment, we do not keep "offer_intent" in next_action
                     not any(
                         eliminate_action in action
-                        for eliminate_action in NEXTACTS_ELIMINATE_ACTIONS
+                        for eliminate_action in NEXTACTS_ELIMINATE_ACTIONS_QUERY_RELATED
                     )
-                    # keep the action if the action is "offer_intent"
+                    # keep the action if the action is "offer_intent", we will remove it latter
                     or any(
                         exclude_eliminate_action in action
-                        for exclude_eliminate_action in NEXTACTS_EXCLUDE_ELIMINATE_ACTIONS
+                        for exclude_eliminate_action in NEXTACTS_ELIMINATE_ACTIONS
                     )
                 )
             ]
@@ -537,17 +543,33 @@ class TurnProcessor:
                     self.domain,
                     f"system_{ActionTemplate.KEY_SYSTEM_QUERY.format(intent_name=method_name)}",
                 )
-                print(query_action)
                 next_actions_desc.append(query_action)
                 self.state_dict["history"][-1][self.domain].append(query_action)
 
             action_ids = list()
-            # Resolve actions
+            next_actions_desc = [
+                action
+                for action in next_actions_desc
+                if (
+                    # remove the action if the action is "offer_intent", we want dialogue manager to decide this
+                    not any(
+                        exclude_eliminate_action in action
+                        for exclude_eliminate_action in NEXTACTS_ELIMINATE_ACTIONS
+                    )
+                )
+            ]
+            # Resolve actions only if it matched with previous_domain
+            # LONG EXPLAIN
+            # The reason behind this is that only user has the right to transit domain
+            # If user asked for domain transition, the user turn would has 2 domains,
+            # each will then correspond to a system nextacts process
+            # If domain is differ from previous domain then it means the actions should be ignore since it has yet existed
+            # SHORT EXPLAIN
+            # During transition, previous user turn has at least 1 turn differ from current system turn domain
+            # When continue to process that previous turn, we as a model must not know what to do until new domain is detected
             for action in next_actions_desc:
-                # if current action is not in current turn domain -> resolve out of domain
-                if not is_in_domain(domain=domain, name=action):
+                if is_in_domain(self.domain, action) and self.domain == previous_domain:
                     try:
-                        # _id = self.desc_to_id[action]
                         _id = self.desc_to_id[action]
                         action_ids.append(_id)
                     except Exception:
@@ -557,13 +579,14 @@ class TurnProcessor:
                                 name=action, desc_to_id=self.desc_to_id
                             )
                         )
+
             # If action_ids is empty next actions is none
             if action_ids:
                 try_sort_id(action_ids, based_index=-1)
-                next_actions_desc = " ".join(action_ids)
+                next_actions_desc = ", ".join(action_ids)
             # If action_ids is empty, the domain transition is taking place
             else:
-                next_actions_desc = "none"
+                next_actions_desc = NONE_ACT
 
         history_desc = list()
         # Handle history
@@ -582,10 +605,11 @@ class TurnProcessor:
                             # eliminate query actions
                             if action is not None:
                                 actions_list.append(action)
+                    else:
+                        actions_list = previous_actions_list
 
                     for action in actions_list:
                         try:
-                            # _id = self.desc_to_id[action]
                             _id = self.desc_to_id[action]
                             action_ids.append(_id)
                         except Exception:
@@ -594,13 +618,6 @@ class TurnProcessor:
                                 + MISSING_FORMAT.format(
                                     name=action, desc_to_id=self.desc_to_id
                                 )
-                                # + "\n\n\n"
-                                # + str(
-                                #     [
-                                #         self.state_dict["active_intent"][i][self.domain]
-                                #         for i in range(-1, -4, -1)
-                                #     ]
-                                # ),
                             )
                 try_sort_id(action_ids, based_index=-1)
                 desc = ", ".join(action_ids)
@@ -630,7 +647,7 @@ class TurnProcessor:
                 turn_info.in_system_actions, system_actions_desc
             )
             next_actions_desc, history_desc = self.process_next_actions_and_history(
-                turn_info.turn_domain
+                turn_info.frame_domain
             )
             turn_info.out_history = add_string(turn_info.out_history, history_desc)
             dependencies_desc = self.process_dependencies()
@@ -652,9 +669,8 @@ class TurnProcessor:
             )
 
         elif self.speaker == "system":
-            # logging.info(f"{turn_info.turn_domain}")
             next_actions_desc, history_desc = self.process_next_actions_and_history(
-                previous_domain=turn_info.turn_domain
+                previous_domain=turn_info.frame_domain
             )
             turn_info.out_next_actions = add_string(
                 turn_info.out_next_actions, next_actions_desc
@@ -692,7 +708,7 @@ def process_turn(
 
     turn_info_per_frame = []
 
-    # Examsine multi domain example during data exploration
+    # Examine multi domain example during data exploration
     # if len(turn["frames"]) > 1 and turn["speaker"] == "system":
     #     logging.fatal("System failed!")
     #     acts = []
@@ -717,7 +733,7 @@ def process_turn(
             # Multi-service turns are possible, each frame corresponds to one
             # service (domain).
             turn_info.frame_id = str(frame_id)
-            turn_info.turn_domain = frame["service"].lower()
+            turn_info.frame_domain = frame["service"].lower()
 
             turn_info, desc_to_id = TurnProcessor(
                 speaker="user",
@@ -729,22 +745,20 @@ def process_turn(
                 state_dict=state_dict,
                 desc_to_id={},
             ).serialize(turn_info=turn_info)
-            turn_info_per_frame.append(turn_info)
-            state_dict["last_turn_infos"][turn_info.turn_domain] = (
-                turn_info,
-                desc_to_id,
+            turn_info_per_frame.append(copy.deepcopy(turn_info))
+
+            state_dict["last_turn_infos"][turn_info.frame_domain] = (
+                copy.deepcopy(turn_info),
+                copy.deepcopy(desc_to_id),
             )
     elif speaker == "system":
-        # frame["state"] = []
-        ## NOTICE system turn only has 1 frame
+        assert len(turn["frames"]) == 1, "System turn must has exactly 1 frame only"
         frame = turn["frames"][0]
-        # we dont use domain as domain is also recorded in turn_info.turn_domain
+        # we dont use domain as domain is also recorded in turn_info.frame_domain
         for domain, last_turn_info in state_dict["last_turn_infos"].items():
             turn_info, desc_to_id = last_turn_info
             turn_info.user_turn = False
             turn_info.turn_id = str(turn_id)
-
-            # logging.info(f"{turn_info.domain}")
 
             turn_info, desc_to_id = TurnProcessor(
                 speaker="system",
@@ -756,7 +770,7 @@ def process_turn(
                 state_dict=state_dict,
                 desc_to_id=desc_to_id,
             ).serialize(turn_info=turn_info)
-            turn_info_per_frame.append(turn_info)
+            turn_info_per_frame.append(copy.deepcopy(turn_info))
 
     return desc_to_id, turn_info_per_frame
 
@@ -769,22 +783,24 @@ def write_examples(turn_list: List[TurnInfo], out_file) -> None:
       out_file: A GFile object for file output.
     """
     for turn_info in turn_list:
-        # Write samples to file. Each example is divided into two parts
-        # separated by \t, the first part being inputs to the model, and the
+        # Write samples to file. Each example is divided into three parts - input, output, meta
+        # separated by \t\t, each components are spaced by \t, the first part being inputs to the model, and the
         # second part are labels for prediction.
         input_text = ""
         output_text = ""
         if FLAGS.level == "dst":
             if not turn_info.user_turn:
                 # Only output at user turns.
-                input_text = f"{turn_info.in_params} {turn_info.in_user_actions} {turn_info.in_system_actions} {turn_info.in_dependencies} {turn_info.in_target_actions} {turn_info.in_constraints} {turn_info.in_conversations}"
-                output_text = f"{turn_info.out_states} {turn_info.out_history} {turn_info.out_next_actions}"
+                input_text = f"""{turn_info.in_params}\t{turn_info.in_user_actions}\t{turn_info.in_system_actions}\t\
+{turn_info.in_dependencies}\t{turn_info.in_target_actions}\t{turn_info.in_constraints}\t\
+{turn_info.in_conversations}"""
+                output_text = f"{turn_info.out_states}\t{turn_info.out_history}\t{turn_info.out_next_actions}"
         if input_text != "" and output_text != "":
             # Add dialogue ID, turn ID and frame ID to the target for later eval.
             # Occasionally some examples include newline in the middle.
             example = (
-                f"{input_text}\t{output_text}\t"
-                + f"{turn_info.dialogue_id}\t{turn_info.turn_id}\t{turn_info.frame_id}"
+                f"{input_text}\t\t{output_text}\t\t"
+                + f"dialogue_id:{turn_info.dialogue_id}\tturn_id:{turn_info.turn_id}\tframe_domain:{turn_info.frame_domain}\tframe_id:{turn_info.frame_id}"
             )
             if FLAGS.lowercase:
                 example = example.lower()
@@ -810,8 +826,7 @@ def example_filter(turn_list: List[TurnInfo]):
 
     out_sample_num = int(len(turn_list) * FLAGS.data_percent)
     if not FLAGS.uniform_domain_distribution:
-        if FLAGS.randomize_items:
-            random.shuffle(turn_list)
+        try_shuffle(turn_list)
         return turn_list[:out_sample_num]
     else:
         domain_examples = {}
@@ -842,8 +857,7 @@ def example_filter(turn_list: List[TurnInfo]):
             )
             consumed_examples[domain_id] += 1
 
-        if FLAGS.randomize_items:
-            random.shuffle(uniform_turn_list)
+        try_shuffle(uniform_turn_list)
 
         return uniform_turn_list
 
@@ -864,7 +878,6 @@ def preprocess_dialogues(dialogues):
             # domain transition occuring
             else:
                 if speaker == "system":
-                    assert current_domains.issubset(previous_domains)
                     # previous_speaker is user, user must have informed some intent,
                     # this is normal case and system will follow user intent
                     if not current_domains.issubset(previous_domains):
@@ -872,9 +885,11 @@ def preprocess_dialogues(dialogues):
                             f"System changed the domain by itself!!!\n\t\t\t{dialogue['dialogue_id']}, {turn_index}, user domains: {previous_domains}, system domains: {current_domains}"
                         )
                 elif speaker == "user":
-                    for domain in current_domains:
-                        # not the first turn
-                        if domain not in previous_domains and turn_index != 0:
+                    for domain in previous_domains:
+                        # If not the first turn and previous system turn has some domain that current user turn doesn't
+                        # Add that domain to user turn as examples will based on user turn
+                        if domain not in current_domains and turn_index != 0:
+                            current_domains.add(domain)
                             padding_frame = {
                                 "actions": [],
                                 "service": domain,
@@ -893,7 +908,7 @@ def preprocess_dialogues(dialogues):
                             )
 
 
-def generate_data(ordered_slots, item_desc):
+def generate_data(item_desc):
     """Generate SGD examples in text format.
 
     Args:
@@ -913,6 +928,7 @@ def generate_data(ordered_slots, item_desc):
             with open(sgd_file, "r", encoding="utf-8") as sgd_in:
                 dialogues = json.load(sgd_in)
                 preprocess_dialogues(dialogues)
+                # logging.info(json.dumps(dialogues, indent=4))
                 for dialogue in dialogues:
                     state_dict = {
                         "history": [],
@@ -940,8 +956,8 @@ def generate_data(ordered_slots, item_desc):
 
 
 def main(_):
-    slots, item_desc = load_schema()
-    generate_data(slots, item_desc)
+    item_desc = load_schema()
+    generate_data(item_desc)
 
 
 if __name__ == "__main__":

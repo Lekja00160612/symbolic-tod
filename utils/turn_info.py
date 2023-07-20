@@ -1,6 +1,7 @@
 """ Contain all possible turn info """
 from dataclasses import dataclass
 
+
 @dataclass
 class TurnInfo:
     """Information extracted from dialog turns."""
@@ -18,7 +19,7 @@ class TurnInfo:
     in_conversations: str = "[conversation]"
 
     user_turn: bool = False
-    turn_domain: str = ""
     dialogue_id: str = ""
     turn_id: str = ""
     frame_id: str = ""
+    frame_domain: str = ""
