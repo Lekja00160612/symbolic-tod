@@ -52,6 +52,9 @@ MISSING_FORMAT = "{name} id not found in {desc_to_id}"
 
 
 class TurnProcessor:
+    """
+    These turns need process input and output, use serialize for this task
+    """
     def __init__(
         self,
         speaker: str,
@@ -69,7 +72,6 @@ class TurnProcessor:
         # Save labeled state
         self.frames = frames
         self.frame = domain_frame
-        # logging.fatal(f"{self.frame['state']}")
         if speaker == "user":
             self.state = self.frame["state"]
         # Name of currenty process domain
@@ -236,13 +238,16 @@ class TurnProcessor:
             - Dependency means what actions needed to happen before database query
             - Each <dependency> (query_act) is then mapped to format:
               "<previous_act_id_1, previous_act_id_2,... previous_act_id_n> -> <query_act_id>"
-            - It is unclear what actions must proceed before query, however, <required slots> are.
-              Foreach required_slot, we try:
-                1. user_inform_<required_slot>
-                2. system_offer_<required_slot>
-                3. system_confirm_<required_slot>, Only happen if the action is transactional
-              (1), (2) exist because <required_slot> must come from either system offer or user inform
-              (3) exists because transactional query need confirmation before proceed
+            # - It is unclear what actions must proceed before query, however, <required slots> are.
+            #   Foreach required_slot, we try:
+            #     1. user_inform_<required_slot>
+            #     2. system_offer_<required_slot>
+            #     3. system_confirm_<required_slot>, Only happen if the action is transactional
+            #   (1), (2) exist because <required_slot> must come from either system offer or user inform
+            #   (3) exists because transactional query need confirmation before proceed
+            - During dataset testing only, if the intent not is_transactional (think of http GET method)
+              we default all its required slots are from user_inform, else, we must system_confirm
+              if the intent is_transactional (think of http POST method)
         Return:
             - str - dependencies_desc: Contains all formatted dependencies, then append to <tag>
         """
@@ -254,13 +259,20 @@ class TurnProcessor:
                 continue
 
             depend_variable_ids = []
-            dependency_actions = DEPENDENCIES_ACTIONS
+            # dependency_actions = DEPENDENCIES_ACTIONS
+            # is transactional intent
             if self.item_desc.is_transactional[dependency] is True:
                 dependency_actions = (
-                    DEPENDENCIES_ACTIONS + TRANSACTIONAL_DEPENDENCIES_ACTIONS
+                    # DEPENDENCIES_ACTIONS + 
+                    TRANSACTIONAL_DEPENDENCIES_ACTIONS
+                )
+            # not transactional intent
+            else:
+                dependency_actions = (
+                    DEPENDENCIES_ACTIONS
                 )
 
-            for required_slot in self.item_desc.dependencies[dependency]:
+            for required_slot in self.item_desc.dependencies[dependency]["required_slots"]:
                 actions = []
                 for dependency_action in dependency_actions:
                     action_name = f"{self.domain}-{dependency_action}_{required_slot}"
@@ -273,7 +285,7 @@ class TurnProcessor:
                 # Must be atleast one action matches the context
                 if len(depend_variable_ids) == 0:
                     logging.fatal(
-                        f"Non action exist in context: {actions} not found {MISSING_FORMAT.format(name=action_name, desc_to_id=self.desc_to_id)}"
+                        f"Non-action exist in context: {actions} not found {MISSING_FORMAT.format(name=action_name, desc_to_id=self.desc_to_id)}"
                     )
             try_sort_id(depend_variable_ids, based_index=-1)
             desc = f"{', '.join(depend_variable_ids)} -> {self.desc_to_id[dependency]}"
@@ -331,7 +343,6 @@ class TurnProcessor:
         constraints = [
             "user request param x, system inform the param x",
             "target actions depend on param x and user did not inform, system request param x",
-            "after offer an item and user like the item, offer user to purchase",
         ]
         try_shuffle(constraints)
         constrain_desc = "; ".join(constraints)
@@ -383,14 +394,14 @@ class TurnProcessor:
                     and FLAGS.param_symbolize_level == "non-categorical"
                 ):
                     continue
-                symbolize_value = symbolize()
+                symbolize_value = symbolize(param_value)
                 desc[index] = (param_id, symbolize_value)
                 logging.debug(f"{param_value} is replaced with {symbolize_value}")
 
                 def _replace_symbolic(turn_utterance):
                     # pylint: disable=no-member
                     speaker, utterance = turn_utterance
-                    if param_value in utterance:
+                    if param_value in utterance and param_value != symbolize_value:
                         utterance = utterance.replace(param_value, symbolize_value)
                     # pylint: enable=no-member
                     return [speaker, utterance]

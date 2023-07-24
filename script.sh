@@ -1,5 +1,5 @@
 git clone https://github.com/google-research/task-oriented-dialogue.git
-git clone https://github.com/google-research-datasets/dstc8-schema-guided-dialogue.git #
+git clone https://github.com/google-research-datasets/dstc8-schema-guided-dialogue.git # step 1
 git clone https://github.com/budzianowski/multiwoz.git
 
 git clone https://github.com/google-research/google-research.git
@@ -14,12 +14,13 @@ python3 -m schema_guided_data.evaluate \
 --eval_set dev \
 --output_metric_file eval_result/dev.json
 
-#
+# step 2
 python3 addAction2Schema.py \
 --sgd_folder dstc8-schema-guided-dialogue/train \
 --schema_file dstc8-schema-guided-dialogue/train/schema.json \
 --out_schema_file schema.json
 
+# step 3
 python3 symbolic.py \
 --sgd_file="dstc8-schema-guided-dialogue/train" \
 --schema_file="schema.json" \

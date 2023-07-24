@@ -11,7 +11,10 @@ NON_SLOT_CONTEXT_ACTIONS = [
 ]
 
 DEPENDENCIES_ACTIONS = ["user_inform"]
-TRANSACTIONAL_DEPENDENCIES_ACTIONS = ["system_confirm", "system_offer"]
+TRANSACTIONAL_DEPENDENCIES_ACTIONS = [
+    "system_confirm", 
+    # "system_offer"
+]
 
 NEXTACTS_ELIMINATE_ACTIONS_QUERY_RELATED = [
     "offer",
@@ -19,9 +22,14 @@ NEXTACTS_ELIMINATE_ACTIONS_QUERY_RELATED = [
     "notify_success",
     "inform_count",
 ]
-NEXTACTS_ELIMINATE_ACTIONS = ["offer_intent"]
+
+NEXTACTS_ELIMINATE_ACTIONS = [
+    "offer_intent"
+    "confirm" #
+]
 
 NONE_ACT = str()
+
 LOOKUP_INTENTS = ["find", "search", "get"]
 PURCHASE_INTENTS = [
     "buy",

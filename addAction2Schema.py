@@ -163,9 +163,7 @@ def generate_schema_with_action() -> AllSchemasAction:
                                     else None
                                 )
                             if speaker == "user":
-                                # if dialogue["dialogue_id"] == "11_00002":
-                                #     logging.error(f"{act}_{slot}")
-                                #     logging.error(f"{possible_user_actions[domain_name]}")
+                          
                                 possible_user_actions[
                                     domain_name
                                 ] = resolve_user_action(
@@ -217,6 +215,36 @@ def generate_schema_with_action() -> AllSchemasAction:
                             "confirm_number_of_tickets",
                             ActionTemplate.SYSTEM_CONFIRM.format(
                                 slot_name="number_of_tickets"
+                            ),
+                        ),
+                        (
+                            "confirm_movie_name",
+                            ActionTemplate.SYSTEM_CONFIRM.format(
+                                slot_name="movie_name"
+                            ),
+                        ),
+                        (
+                            "confirm_show_date",
+                            ActionTemplate.SYSTEM_CONFIRM.format(
+                                slot_name="show_date"
+                            ),
+                        ),
+                        (
+                            "confirm_location",
+                            ActionTemplate.SYSTEM_CONFIRM.format(
+                                slot_name="location"
+                            ),
+                        ),
+                        (
+                            "confirm_show_time",
+                            ActionTemplate.SYSTEM_CONFIRM.format(
+                                slot_name="show_time"
+                            ),
+                        ),
+                        (
+                            "confirm_show_type",
+                            ActionTemplate.SYSTEM_CONFIRM.format(
+                                slot_name="show_type"
                             ),
                         ),
                     ]

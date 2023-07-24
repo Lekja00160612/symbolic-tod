@@ -55,6 +55,9 @@ flags.DEFINE_bool(
 )
 
 # ablation study flag
+flags.DEFINE_float(
+    "symbolize_percent", 0.5, "If not 0, the percentage of symbolize slots to be generated."
+)
 flags.DEFINE_enum(
     "symbolize_level",
     "none",
