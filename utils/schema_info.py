@@ -23,19 +23,18 @@ class SchemaInfo:
     # Param related
     possible_values: Dict[str, str] = field(default_factory=dict)
     is_categorical: Dict[str, str] = field(default_factory=dict)
-    is_symbolizable: Dict[str, str] = field(default_factory=dict)
     params: Dict[str, str] = field(default_factory=dict)
 
     # Intent related
     is_transactional: Dict[str, str] = field(default_factory=dict)
     dependencies: Dict[str, str] = field(default_factory=dict)
+    system_offer_params: Dict[str, str] = field(default_factory=dict)
 
 
 def retrieve_dependencies_slots(schema, rule_based=False):
     user_inform_slots = defaultdict(lambda: [])
     system_offer_slots = defaultdict(lambda: [])
     system_confirm_slots = defaultdict(lambda: [])
-
     for intent in schema["intents"]:
         other_intents = [
             other_intent
@@ -109,36 +108,37 @@ def retrieve_dependencies_slots(schema, rule_based=False):
             # Try heuristic methods based on possible actions
             else:
                 if intent["is_transactional"] is False:
+                    user_inform_slots[intent_name].append(required_slot)
+                    if f"inform_{required_slot}" not in schema["possible_user_actions"]:
+                        logging.fatal(
+                            f"inform_{required_slot} not in {schema['possible_user_actions']}"
+                        )
+                else:
+                    system_confirm_slots[intent_name].append(required_slot)
+                    if (
+                        f"confirm_{required_slot}"
+                        not in schema["possible_system_actions"]
+                    ):
+                        logging.fatal(
+                            f"confirm_{required_slot} not in {schema['possible_system_actions']}"
+                        )
+
                     if f"inform_{required_slot}" in schema["possible_user_actions"]:
                         user_inform_slots[intent_name].append(required_slot)
-                    else:
-                        logging.fatal(
-                            f"{intent_name}, {required_slot} user inform is not available"
+
+                    if f"offer_{required_slot}" in schema["possible_system_actions"]:
+                        system_offer_slots[intent_name].append(required_slot)
+
+                    if (
+                        required_slot in system_offer_slots[intent_name]
+                        and required_slot in user_inform_slots[intent_name]
+                    ):
+                        logging.info(
+                            f"{required_slot} can come from both user_inform and system_offer"
                         )
-
-                else:
-                    if f"confirm_{required_slot}" in schema["possible_system_actions"]:
-                        system_confirm_slots[intent_name].append(required_slot)
-                    else:
-                        logging.fatal(
-                            f"{intent_name}, {required_slot} system confirm is not available"
-                        )
-
-                    # if (f"inform_{required_slot}" not in schema["possible_user_actions"]
-                    #     and f"offer_{required_slot}" not in schema["possible_system_actions"]):
-                    #     continue
-
-                    # if (f"inform_{required_slot}" not in schema["possible_user_actions"])
-                    #     system_offer_slots[intent_name].append(required_slot)
-
-                    # if f"offer_{required_slot}" in schema["possible_system_actions"]:
-                    #     user_inform_slots[intent_name].append(required_slot)
-
     logging.info(
         f"{json.dumps(schema['intents'],indent=4)}\n\tuser_inform_slots: {json.dumps(user_inform_slots,indent=4)}\n\tsystem_offer_slots: {json.dumps(system_offer_slots,indent=4)}\n\tsystem_confirm_slots: {json.dumps(system_confirm_slots,indent=4)}"
     )
-
-    return user_inform_slots, system_confirm_slots, system_offer_slots
 
 
 def load_schema() -> SchemaInfo:
@@ -176,7 +176,6 @@ def load_schema() -> SchemaInfo:
             for slot in schema["slots"]:
                 name = merge_domain_name(domain, slot["name"])
                 is_categorical = slot["is_categorical"]
-                is_symbolizable = not slot["is_categorical"]
                 poss_vals = slot["possible_values"]
 
                 # If this is a categorical slot but the possible value are all numeric,
@@ -184,12 +183,9 @@ def load_schema() -> SchemaInfo:
                 if is_categorical and all(v.isdigit() for v in poss_vals):
                     poss_vals = []
                     is_categorical = False
-                    is_symbolizable = False
-                
 
                 item_desc.is_categorical[name] = is_categorical
                 item_desc.possible_values[name] = poss_vals
-                item_desc.is_symbolizable[name] = is_symbolizable
 
             item_desc.possible_system_actions.update(
                 {
@@ -214,32 +210,17 @@ def load_schema() -> SchemaInfo:
                 logging.info(f"{domain} has more than 2 intents!")
 
             for intent in schema["intents"]:
-                
                 intent_name = merge_domain_name(
                     domain,
                     f"system_{ActionTemplate.KEY_SYSTEM_QUERY.format(intent_name=try_lowercase(intent['name']))}",
                 )
-                item_desc.dependencies[intent_name] = {}
 
-                item_desc.dependencies[intent_name]["required_slots"] = intent[
-                    "required_slots"
-                ]
+                item_desc.dependencies[intent_name] = intent["required_slots"]
 
                 item_desc.is_transactional[intent_name] = intent["is_transactional"]
 
-                # get slot strict level
-                (
-                    user_inform_slots,
-                    system_confirm_slots,
-                    system_offer_slots,
-                ) = retrieve_dependencies_slots(schema=schema)
-                item_desc.dependencies[intent_name]["user_inform_slots"] = user_inform_slots
-                item_desc.dependencies[intent_name][
-                    "system_offer_slots"
-                ] = system_offer_slots
-                item_desc.dependencies[intent_name][
-                    "system_confirm_slots"
-                ] = system_confirm_slots
+            # get slot strict level
+            # retrieve_dependencies_slots(schema=schema)
 
     return item_desc
 

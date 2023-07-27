@@ -5,6 +5,7 @@
 /hungarian
 /data
 /log
+/generator
 schema.json
 
 # Byte-compiled / optimized / DLL files
