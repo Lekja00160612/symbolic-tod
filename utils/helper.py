@@ -3,8 +3,6 @@ import random
 from typing import MutableSequence
 from absl import flags
 
-import re
-
 from natsort import humansorted
 
 FLAGS = flags.FLAGS

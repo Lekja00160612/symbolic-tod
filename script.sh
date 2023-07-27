@@ -1,3 +1,4 @@
+pip install -r requirements.txt # step 0
 git clone https://github.com/google-research/task-oriented-dialogue.git
 git clone https://github.com/google-research-datasets/dstc8-schema-guided-dialogue.git # step 1
 git clone https://github.com/budzianowski/multiwoz.git
@@ -31,3 +32,5 @@ python3 symbolic.py \
 --data_format=full_desc \
 --multiple_choice=1a \
 --alsologtostderr
+
+python3 -m experiment.train

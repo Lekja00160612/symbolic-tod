@@ -1,2 +1,5 @@
 natsort
 absl
+transformers[torch]
+datasets
+# evaluate
