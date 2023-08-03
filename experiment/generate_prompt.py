@@ -17,6 +17,8 @@ class PromptCategory(StrEnum):
     history = "history"
     nextacts = "nextacts"
 
+    # Special tags
+
 prompts = {
     PromptCategory.dependencies: [
         f"[{PromptCategory.dependencies}]: list of actions x must appeared in the conversation before actions y can happen",

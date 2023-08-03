@@ -42,6 +42,7 @@ from utils.helper import (
     add_string,
     get_name,
     try_sort_id,
+    get_speaker,
 )
 import utils.flags  # pylint: disable=unused-import
 
@@ -202,7 +203,7 @@ class TurnProcessor:
                         # Log error if action need <param> but cannot resolve <param_id>
                         else:
                             logging.fatal(
-                                f"{action}, {(list((non_slot_context_action in desc, non_slot_context_action) for non_slot_context_action in NON_SLOT_CONTEXT_ACTIONS))}\n{MISSING_FORMAT.format(name=action,desc_to_id=param_to_id)}"
+                                f"{action}, {desc}, {(list((non_slot_context_action in desc, non_slot_context_action) for non_slot_context_action in NON_SLOT_CONTEXT_ACTIONS))}\n{MISSING_FORMAT.format(name=action,desc_to_id=param_to_id)}"
                             )
                 case "item_name":
                     desc = get_name(action)
@@ -398,7 +399,7 @@ class TurnProcessor:
                 conversation = list(map(_replace_symbolic, conversation))
         conversation = list(map(lambda x: f"[{x[0]}] {x[1]}", conversation))
         conversation_desc = " ".join(conversation)
-        state_desc = " ".join(map(lambda x: f"{x[0]}={x[1]}", desc))
+        state_desc = "; ".join(map(lambda x: f"{x[0]}={x[1]}", desc))
         return state_desc, conversation_desc
 
     def process_next_actions_and_history(
@@ -457,12 +458,15 @@ class TurnProcessor:
                         action = f"{self.speaker}_{act}"
                     # Intent related action
                     elif slot == "intent":
-                        value = (
-                            try_lowercase(action["values"][0])
-                            if slot == "intent"
-                            else None
-                        )
-                        action = f"{self.speaker}_{act}_{value}"
+                        if act in ["request", "inform"]:
+                            # Special case of a slot called "intent"
+                            assert "homes_2" in domain
+                            action = f"{self.speaker}_{act}_intent"
+                        elif act in ['offer_intent', 'inform_intent']:
+                            assert len(action["values"]) > 0
+                            value = try_lowercase(action["values"][0])
+                            action = f"{self.speaker}_{act}_{value}" 
+                        else: assert False
                     # Slot required action (inform, request, ...)
                     else:
                         action = f"{self.speaker}_{act}_{slot}"
@@ -598,7 +602,7 @@ class TurnProcessor:
                     actions_list = []
                     if domain != self.domain:
                         for action in previous_actions_list:
-                            speaker = "user" if "user" in action else "system"
+                            speaker = get_speaker(action)
                             action = resolve_multi_domain_action(
                                 speaker=speaker, action=action
                             )
@@ -618,6 +622,7 @@ class TurnProcessor:
                                 + MISSING_FORMAT.format(
                                     name=action, desc_to_id=self.desc_to_id
                                 )
+                                + "\n" + str(previous_actions_list)
                             )
                 try_sort_id(action_ids, based_index=-1)
                 desc = ", ".join(action_ids)
@@ -903,7 +908,7 @@ def preprocess_dialogues(dialogues):
                             dialogues[dialogue_index]["turns"][turn_index][
                                 "frames"
                             ].append(padding_frame)
-                            logging.info(
+                            logging.debug(
                                 f"{dialogue['dialogue_id']}, {turn_index}, system domains: {previous_domains}, user domains: {current_domains}"
                             )
 
@@ -921,10 +926,15 @@ def generate_data(item_desc):
         all_turns_per_frame = []
 
         sgd_folder = pathlib.Path(FLAGS.sgd_file)
-        for sgd_file in sgd_folder.rglob("dialogues_*.json"):
+        for sgd_file in sorted(sgd_folder.rglob("dialogues_*.json")):
             logging.info(f"processing {sgd_file}")
-            if not any([str(number) in str(sgd_file) for number in range(44, 128)]):
-                continue
+            if True:
+                if "train" in str(sgd_file) and not any([str(number) in str(sgd_file) for number in range(44, 128)]):
+                    continue
+                if "dev" in str(sgd_file) and not any([str(number) in str(sgd_file) for number in range(8, 21)]):
+                    continue
+                if "test" in str(sgd_file) and not any([str(number) in str(sgd_file) for number in range(12, 35)]):
+                    continue
             with open(sgd_file, "r", encoding="utf-8") as sgd_in:
                 dialogues = json.load(sgd_in)
                 preprocess_dialogues(dialogues)
@@ -937,10 +947,6 @@ def generate_data(item_desc):
                         "active_intent": [],
                     }
 
-                    # # Check maximum number of services
-                    # services = dlg["services"]
-                    # if len(services) > 2:
-                    #     logging.warning(f"{turn_info.dialogue_id} has {len(services)} services ({services})")
                     for turn_idx, turn in enumerate(dialogue["turns"]):
                         desc_to_id, per_frame_turn_info = process_turn(
                             dialogue_id=dialogue["dialogue_id"],
@@ -954,16 +960,18 @@ def generate_data(item_desc):
 
                 write_examples(example_filter(all_turns_per_frame), out_file)
 
+def set_log_dir():
+    if not os.path.exists(FLAGS.log_folder):
+        os.makedirs(FLAGS.log_folder)
+    logging.get_absl_handler().use_absl_log_file("absl_logging", FLAGS.log_folder)
 
 def main(_):
+    set_log_dir()
     item_desc = load_schema()
     generate_data(item_desc)
 
 
 if __name__ == "__main__":
-    if not os.path.exists("./log"):
-        os.makedirs("./log")
-    logging.get_absl_handler().use_absl_log_file("absl_logging", "./log")
     flags.mark_flag_as_required("sgd_file")
     flags.mark_flag_as_required("schema_file")
     flags.mark_flag_as_required("output_file")

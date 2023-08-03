@@ -7,6 +7,7 @@ r"""
 """
 from collections import defaultdict
 import re
+import os
 import json
 import pathlib
 from typing import Dict, Set, Tuple
@@ -20,6 +21,7 @@ logging.set_verbosity("info")
 FLAGS = flags.FLAGS
 flags.DEFINE_string("schema_file", None, "Schema file path.")
 flags.DEFINE_string("out_schema_file", None, "Output schema file path.")
+flags.DEFINE_string("log_folder", None, "Log folder path.")
 flags.DEFINE_string(
     "sgd_folder",
     None,
@@ -108,12 +110,57 @@ def resolve_system_action(act, slot, value, possible_system_actions):
             logging.error(f"Resolver did not handle system {act=} with {slot=}")
     possible_system_actions.add(
         (
-            f"{act}_{slot}" if (slot not in ["", "intent", "count"]) else f"{act}",
+            f"{act}_{slot}" 
+            if (slot not in ["", "intent", "count"]) or (act == "request" and slot == "intent") 
+            else f"{act}",
             act_desc,
         )
     )
     return possible_system_actions
 
+def handle_exception_cases(domain_name, schema, possible_user_actions, possible_system_actions):
+    if "movies_1" in domain_name:
+        # In dataset, user never affirm to book tickets, so navigating in the dataset only would result in missing actions
+        for intent in schema["intents"]:
+            if "ticket" in intent["name"].lower() or "seat" in intent["name"].lower(): 
+                for slot in intent["required_slots"]:
+                    possible_user_actions[domain_name].add(
+                        (
+                            f"inform_{slot}",
+                            ActionTemplate.USER_INFORM.format(
+                                slot_name=slot
+                            ),
+                        )
+                    )
+                    possible_system_actions[domain_name].update(
+                        [
+                            (
+                                f"request_{slot}",
+                                ActionTemplate.SYSTEM_REQUEST.format(
+                                    slot_name=slot
+                                ),
+                            ),
+                            (
+                                f"confirm_{slot}",
+                                ActionTemplate.SYSTEM_CONFIRM.format(
+                                    slot_name=slot
+                                ),
+                            ),
+                        ]
+                    )
+    elif "homes_2" in domain_name:
+        if "intent" in list(slot["name"] for slot in schema["slots"]):
+            logging.info(domain_name)
+            possible_system_actions[domain_name].add((
+                "request_intent",
+                ActionTemplate.SYSTEM_REQUEST.format(slot_name="intent")
+            ))
+            possible_user_actions[domain_name].add((
+                "inform_intent",
+                ActionTemplate.USER_INFORM.format(slot_name="intent")
+            ))
+
+    return possible_user_actions, possible_system_actions
 
 def generate_schema_with_action() -> AllSchemasAction:
     """
@@ -124,7 +171,7 @@ def generate_schema_with_action() -> AllSchemasAction:
     possible_system_actions = defaultdict(lambda: set())
     dialogues_dir = pathlib.Path(FLAGS.sgd_folder)
     # Iterate through every files contain dialogues
-    for dialogues_file in dialogues_dir.rglob("dialogues_*.json"):
+    for dialogues_file in sorted(dialogues_dir.rglob("dialogues_*.json")):
         logging.info(f"processing {dialogues_file}")
         with open(dialogues_file, "r", encoding="utf-8") as file:
             dialogues = json.load(file)
@@ -136,7 +183,7 @@ def generate_schema_with_action() -> AllSchemasAction:
                     # A turn has multiple frames, each represent an domain
                     # With single domain dialogue, each turn only has 1 frame
                     for frame in turn["frames"]:
-                        domain_name = frame["service"]
+                        domain_name = frame["service"].lower()
                         # Each frame may has multiple action, must convert all to symbol
                         for action in frame["actions"]:
                             act = action["act"].lower()
@@ -147,25 +194,28 @@ def generate_schema_with_action() -> AllSchemasAction:
                                 else action["slot"].lower.replace("_", " ")
                             )
                             # only use when the action is related to intent
-                            value = (
-                                action["values"][0].lower()
-                                if slot == "intent"
-                                else None
-                            )
+                            # some turns might not have value, for example, 
+                            # "How many beds and in what area do you want the property in? Would you like to rent or buy?"
+                            
+                            if slot == "intent" and action["act"].lower() in ["request", "inform"]: # len(action["values"]) == 0:
+                                assert "homes_2" in domain_name
+                                logging.info(f"{str(dialogue['dialogue_id'])} got intent as slot")
+                                continue
+                            
+                            if slot == "intent" and len(action["values"]) > 0:
+                                value = action["values"][0].lower()
+                            else:
+                                value = None
+
                             if value is not None:
                                 value = (
-                                    action["values"][0].lower()
+                                    value
                                     if FLAGS.insert_space is False
                                     else re.sub(
                                         r"(\w)([A-Z])", r"\1 \2", action["values"][0]
                                     ).lower()
-                                    if slot == "intent"
-                                    else None
                                 )
                             if speaker == "user":
-                                # if dialogue["dialogue_id"] == "11_00002":
-                                #     logging.error(f"{act}_{slot}")
-                                #     logging.error(f"{possible_user_actions[domain_name]}")
                                 possible_user_actions[
                                     domain_name
                                 ] = resolve_user_action(
@@ -184,7 +234,7 @@ def generate_schema_with_action() -> AllSchemasAction:
     schemas = []
     with open(FLAGS.schema_file, "r", encoding="utf-8") as sm_file:
         for schema in json.load(sm_file):
-            domain_name = schema["service_name"]
+            domain_name = schema["service_name"].lower()
             # Handle query action
             for intent in schema["intents"]:
                 intent = intent["name"].lower()
@@ -195,42 +245,13 @@ def generate_schema_with_action() -> AllSchemasAction:
                     )
                 )
             # Handle exceptions, these cases were explored during data generation
-            if "movies_1" in domain_name.lower():
-                # In dataset, user never affirm to book tickets, so navigating in the dataset only would result in missing actions
-                possible_user_actions[domain_name].add(
-                    (
-                        "inform_number_of_tickets",
-                        ActionTemplate.USER_INFORM.format(
-                            slot_name="number_of_tickets"
-                        ),
-                    )
-                )
-                possible_system_actions[domain_name].update(
-                    [
-                        (
-                            "request_number_of_tickets",
-                            ActionTemplate.SYSTEM_REQUEST.format(
-                                slot_name="number_of_tickets"
-                            ),
-                        ),
-                        (
-                            "confirm_number_of_tickets",
-                            ActionTemplate.SYSTEM_CONFIRM.format(
-                                slot_name="number_of_tickets"
-                            ),
-                        ),
-                    ]
-                )
-            # if "ridesharing_1" in domain_name.lower():
-            #     possible_user_actions[domain_name].update(
-            #         [
-            #             (
-            #                 "select",
-            #                 ActionTemplate.USER_SELECT.format(slot_name="").strip(),
-            #             ),
-            #             ("request_alts", ActionTemplate.USER_REQUEST_ALTS),
-            #         ]
-            #     )
+            possible_user_actions, possible_system_actions = handle_exception_cases(
+                                                                        domain_name, 
+                                                                        schema, 
+                                                                        possible_user_actions, 
+                                                                        possible_system_actions
+                                                                    )
+                
             possible_system_actions[domain_name].update(
                 [
                     (
@@ -257,14 +278,24 @@ def generate_schema_with_action() -> AllSchemasAction:
                 pair[0]: pair[1] for pair in possible_system_actions[domain_name]
             }
             schemas.append(schema)
+    directory = os.path.split(FLAGS.out_schema_file)[0]
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
     with open(FLAGS.out_schema_file, "w", encoding="utf-8") as out_sm_file:
         json.dump(schemas, out_sm_file, indent=2)
+
+def set_log_dir():
+    if not os.path.exists(FLAGS.log_folder):
+        os.makedirs(FLAGS.log_folder)
+    logging.get_absl_handler().use_absl_log_file("absl_logging", FLAGS.log_folder)
 
 
 def main(_):
     """
     Main execution
     """
+    set_log_dir()
     generate_schema_with_action()
 
 

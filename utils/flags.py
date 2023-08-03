@@ -6,6 +6,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("sgd_file", None, "The SGD json file path.")
 flags.DEFINE_string("schema_file", None, "Schema file path.")
 flags.DEFINE_string("output_file", None, "Output file path.")
+flags.DEFINE_string("log_folder", None, "Log folder path.")
 flags.DEFINE_string(
     "delimiter",
     "=",

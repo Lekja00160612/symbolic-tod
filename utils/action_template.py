@@ -8,6 +8,7 @@ NON_SLOT_CONTEXT_ACTIONS = [
     "request_alts",
     "inform_count",
     "offer_intent",
+    "query",
 ]
 
 DEPENDENCIES_ACTIONS = ["user_inform"]
@@ -208,7 +209,7 @@ def resolve_multi_domain_action(speaker: str, action: str) -> str:
         elif "goodbye" in action:
             ood_action = MultiDomainActionTemplate.USER_GOODBYE
         else:
-            logging.fatal(f"{action} is not handled")
+            logging.fatal(f"{speaker}, {action} is not handled")
 
     # SYSTEM_QUERY = None # Not available during multi-domain OOD
     if speaker == "system":
@@ -233,16 +234,6 @@ def resolve_multi_domain_action(speaker: str, action: str) -> str:
         elif "query" in action:
             ood_action = None
         else:
-            logging.fatal(f"{action} is not handled")
+            logging.fatal(f"{speaker}, {action} is not handled")
 
     return ood_action
-
-
-# replace words with string for code consistency
-# class ActionKey(StrEnum):
-#     KEY_INFORM = "inform"
-#     KEY_REQUEST = "request"
-#     KEY_CONFIRM = "confirm"
-#     KEY_INFORM_COUNT = "inform_count"
-#     KEY_OFFER = "offer"
-#     KEY_INTENT = "offer_intent"

@@ -62,3 +62,7 @@ def try_sort_id(mutable: MutableSequence, based_index=0, human_sorted=True):
         else:
             # x17, x2, x20
             mutable.sort(key=lambda x: x[based_index])
+
+def get_speaker(action: str, delimiter: str="_") -> str:
+    action_name = get_name(action)
+    return action_name.split(delimiter)[0]
