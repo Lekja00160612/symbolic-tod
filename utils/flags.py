@@ -34,6 +34,7 @@ flags.DEFINE_enum(
     ),
 )
 flags.DEFINE_bool("lowercase", True, "If True, lowercase everything.")
+flags.DEFINE_bool("check_multi_domain_data", False, "If True, lowercase everything.")
 flags.DEFINE_bool(
     "randomize_items", True, "If True, randomize the order of schema items."
 )

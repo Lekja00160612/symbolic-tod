@@ -21,16 +21,19 @@ class PromptCategory(StrEnum):
 
 prompts = {
     PromptCategory.dependencies: [
-        f"[{PromptCategory.dependencies}]: list of actions x must appeared in the conversation before actions y can happen",
+        f"[{PromptCategory.dependencies}]: list of actions x must appeared in the conversation before actions y can happend",
         f"[{PromptCategory.dependencies}] explains before system can do actions y, all actions x must existed in history dialogue",
         f"[{PromptCategory.dependencies}] has format x_1, x_2,... x_n -> y, indicating all x_i must happend before y",
     ],
     PromptCategory.constraints: [
         f"[{PromptCategory.constraints}]: behavioral advices that system must follow",
         f"[{PromptCategory.constraints}] are tips for the system to achieve goals",
+        f"[{PromptCategory.constraints}] are basic instructions for the system to complete goals",
     ],
     PromptCategory.targetacts: [
-        f"[{PromptCategory.targetacts}]: actions system trying to achieve to fulfill user needs"
+        f"[{PromptCategory.targetacts}]: actions system trying to achieve to fulfill user needs",
+        f"[{PromptCategory.targetacts}]: actions system must complete to fulfill required tasks",
+        f"[{PromptCategory.targetacts}] is formatted as x_1, x_2,... which are tasks to be done",
     ],
     PromptCategory.conversation: [
         f"[{PromptCategory.conversation}] includes dialogue turns between user and system",

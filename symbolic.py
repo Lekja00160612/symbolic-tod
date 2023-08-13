@@ -928,7 +928,7 @@ def generate_data(item_desc):
         sgd_folder = pathlib.Path(FLAGS.sgd_file)
         for sgd_file in sorted(sgd_folder.rglob("dialogues_*.json")):
             logging.info(f"processing {sgd_file}")
-            if True:
+            if FLAGS.check_multi_domain_data:
                 if "train" in str(sgd_file) and not any([str(number) in str(sgd_file) for number in range(44, 128)]):
                     continue
                 if "dev" in str(sgd_file) and not any([str(number) in str(sgd_file) for number in range(8, 21)]):

@@ -3,3 +3,4 @@ absl-py
 transformers[torch]
 datasets
 fuzzywuzzy
+thefuzz[speedup]

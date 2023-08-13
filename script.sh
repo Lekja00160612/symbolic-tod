@@ -3,9 +3,16 @@ pip install -r requirements.txt # step 0
 git clone https://github.com/google-research-datasets/dstc8-schema-guided-dialogue.git # step 1 get dataset
 # git clone https://github.com/budzianowski/multiwoz.git
 
+
+### Test evaluate script
 # git clone https://github.com/google-research/google-research.git
 # cp -R ./google-research/schema_guided_dst/ ./schema_guided_data
 # rm -rf google-research
+python3 -m schema_guided_data.evaluate \
+--dstc8_data_dir dstc8-schema-guided-dialogue \
+--prediction_dir dstc8-schema-guided-dialogue/test \
+--eval_set test \
+--output_metric_file eval_result/dev.json
 
 cd ./dstc8-schema-guided-dialogue/ && pip install -r ./sgd_x/requirements.txt && python3 -m sgd_x.generate_sgdx_dialogues  && cd .. # step 2 generate sgd-x
 
@@ -22,11 +29,7 @@ cp -R ./dstc8-schema-guided-dialogue/train/ ./data/sgd/v0/
 cp -R ./dstc8-schema-guided-dialogue/dev/   ./data/sgd/v0/
 cp -R ./dstc8-schema-guided-dialogue/test/  ./data/sgd/v0/
 
-# python3 -m schema_guided_data.evaluate \
-# --dstc8_data_dir dstc8-schema-guided-dialogue \
-# --prediction_dir eval_data/dev \
-# --eval_set dev \
-# --output_metric_file eval_result/dev.json
+
 
 for i in {0..5}
 do
@@ -59,7 +62,8 @@ do
     done
 done
 
-for split in test
+### Testing
+for split in dev
 do
     for i in {0..5}
     do
