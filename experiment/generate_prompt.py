@@ -54,7 +54,7 @@ prompts = {
     ],
     PromptCategory.state: [
         f"[{PromptCategory.state}]: includes all captured <param_value> in [{PromptCategory.conversation}]",
-        f"[{PromptCategory.state}] is format as <param_id>=<param_value>"
+        f"[{PromptCategory.state}] is formatted as <param_id>=<param_value>"
     ],
     PromptCategory.history: [
         f"[{PromptCategory.history}] contains all actions appeared in [{PromptCategory.conversation}] and symbolized by [{PromptCategory.useracts}] and [{PromptCategory.sysacts}]"
