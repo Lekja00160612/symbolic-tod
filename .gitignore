@@ -6,6 +6,7 @@
 /log
 /generator
 schema.json
+./_generator*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
