@@ -81,4 +81,7 @@ do
     done
 done
 
+python -m experiment.evaluate --dstc8_data_dir ../data/processed/v0/ --eval_set dev
+
+
 python3 -m experiment.train

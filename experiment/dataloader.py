@@ -13,10 +13,13 @@ from experiment.generate_prompt import serialize_prompt_to_file, get_prompts
 flags = flags.FLAGS
 
 def generate_dataset(data_path: str=None, split: str="train"):
-    with open(f"{data_path}{split}.txt", encoding="utf-8") as file:
+    with open(f"{data_path}/{split}/{split}.txt", encoding="utf-8") as file:
         for index, line in enumerate(file):
             logging.info(f"loading example {index}")
-            yield {"inputs": line.strip().split("\t\t")[0]}
+            components = line.strip().split("\t\t")
+            if len(components) < 3:
+                logging.info(f"{index}: {line}")
+            yield {"inputs": components[0].split(), "target": components[1].split(), "meta": components[2].split()}
 
 def add_prompt(example, prompts: Dict, tokenizer: PreTrainedTokenizer, prompt_offset: int=3):
     prompts_keys = list(prompts.keys())
@@ -31,7 +34,7 @@ def add_prompt(example, prompts: Dict, tokenizer: PreTrainedTokenizer, prompt_of
         input_prompts += random.choices(prompts[key])
         prompt = "; ".join(input_prompts)
         token_ids = tokenizer(prompt).input_ids
-    
+    logging.info(f"loading example {token_length}")
     if input_prompts:
         example["inputs"] = f"[instructions] {'; '.join(input_prompts)} {example['inputs']}"
     
@@ -60,5 +63,5 @@ def get_dataset(split: str=None, data_path: str=None, shuffle: bool=True, datase
         ds = ds.shuffle()
     return ds
 
-    # dataloader = DataLoader(ds.with_format("torch"), num_workers=flags.num_workers)
-    # return dataloader
+if __name__=="__main__":
+    ds = get_dataset("train","../data/processed/v0/")

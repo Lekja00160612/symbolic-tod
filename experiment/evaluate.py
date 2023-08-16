@@ -10,7 +10,7 @@ import numpy as np
 from experiment import metrics
 import experiment.flags
 
-logging.set_verbosity(logging.DEBUG)
+logging.set_verbosity(logging.INFO)
 FLAGS = flags.FLAGS
 
 params_prefix = "[params]"
@@ -242,14 +242,16 @@ def get_per_example_metrics_score(input: str, label: str, predict: str,
         params_is_categorical = input_info["params_is_categorical"]
         hyp_params_values = {}
         for param in predict_state.removeprefix(state_prefix).split(state_delimiter):
-            param_id, param_value = param.strip().split(state_key_value_seperator)
-            hyp_params_values[param_id] = param_value
+            if param.strip():
+                param_id, param_value = param.strip().split(state_key_value_seperator)
+                hyp_params_values[param_id] = param_value
         logging.debug(f"{hyp_params_values=}")
         
         ref_params_values = {}
         for param in label_state.removeprefix(state_prefix).split(state_delimiter):
-            param_id, param_value = param.strip().split(state_key_value_seperator)
-            ref_params_values[param_id] = param_value
+            if param.strip():
+                param_id, param_value = param.strip().split(state_key_value_seperator)
+                ref_params_values[param_id] = param_value
         logging.debug(f"{ref_params_values=}")
 
         goal_acc = get_average_and_joint_goal_accuracy(
@@ -275,7 +277,7 @@ def get_per_example_metrics_score(input: str, label: str, predict: str,
                                                  if action_id.strip() in user_request_action_ids]
         logging.debug(f"{predict_latest_turn_requested_actions=}")
         f1_scores = metrics.compute_f1(list_ref=label_latest_turn_requested_actions, list_hyp=predict_latest_turn_requested_actions) 
-        example_metrics[metrics.REQUESTED_SLOTS_F1] = f1_scores
+        example_metrics[metrics.REQUESTED_SLOTS_F1] = f1_scores.f1
     
     if next_action_query_match:
         system_query_action_ids = input_info["system_query_action_ids"]
@@ -350,9 +352,8 @@ def get_metrics(inputs: List[str], labels: List[str], predicts: List[str], meta_
         # Calculate metrics for each frame in each user turn.
         frame_metric = get_per_example_metrics_score(input,label,predict,
                                       average_and_joint_goal_accuracy=True,
-                                      next_action_query_f1=True,
-                                      request_slots_f1=True,
-                                      active_intent_accuracy=True)
+                                      next_action_query_match=True,
+                                      request_slots_f1=True,)
 
         # Get the domain name of the service.
         domain_keys = [ALL_SERVICES, frame_service, frame_domain]
@@ -363,7 +364,7 @@ def get_metrics(inputs: List[str], labels: List[str], predicts: List[str], meta_
         for domain_key in domain_keys:
             for metric_key, metric_value in frame_metric.items():
                 if metric_value != metrics.NAN_VAL:
-                    if issubclass(metric_value,F1):
+                    if issubclass(type(metric_value),F1):
                         if metric_collections[domain_key][
                             metric_key][dialogue_id][turn_id] != 1.0:
                             assert metric_collections[domain_key][
@@ -437,5 +438,5 @@ if __name__ == "__main__":
     flags.mark_flag_as_required("dstc8_data_dir")
     flags.mark_flag_as_required("eval_set")
     app.run(main)
-logging.debug(compute_f1([F1.FN,F1.TP,F1.TN,F1.FP,F1.FN,F1.TP,F1.TN,F1.FP,F1.FN,F1.TP,F1.TN,F1.FP,F1.FN,F1.TP,F1.TN,F1.FP]))
+# logging.debug(compute_f1([F1.FN,F1.TP,F1.TN,F1.FP,F1.FN,F1.TP,F1.TN,F1.FP,F1.FN,F1.TP,F1.TN,F1.FP,F1.FN,F1.TP,F1.TN,F1.FP]))
 # logging.debug(get_per_example_metrics_score(pseudo_input,pseudo_ref,pseudo_hyp))

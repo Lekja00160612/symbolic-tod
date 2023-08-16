@@ -47,7 +47,6 @@ def train():
     )
 
     trainer.train()
-    trainer.
 
 def main(_):
     data_loader = get_dataset("train", flags.data_path)
