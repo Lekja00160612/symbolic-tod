@@ -1,4 +1,4 @@
-pip install -r requirements.txt # step 0
+cd symbolic-tod && pip install -r requirements.txt && cd .. # step 0
 # git clone https://github.com/google-research/task-oriented-dialogue.git
 git clone https://github.com/google-research-datasets/dstc8-schema-guided-dialogue.git # step 1 get dataset
 # git clone https://github.com/budzianowski/multiwoz.git
@@ -8,13 +8,16 @@ git clone https://github.com/google-research-datasets/dstc8-schema-guided-dialog
 # git clone https://github.com/google-research/google-research.git
 # cp -R ./google-research/schema_guided_dst/ ./schema_guided_data
 # rm -rf google-research
-python3 -m schema_guided_data.evaluate \
---dstc8_data_dir dstc8-schema-guided-dialogue \
---prediction_dir dstc8-schema-guided-dialogue/test \
---eval_set test \
---output_metric_file eval_result/dev.json
+# python3 -m schema_guided_data.evaluate \
+# --dstc8_data_dir dstc8-schema-guided-dialogue \
+# --prediction_dir dstc8-schema-guided-dialogue/test \
+# --eval_set test \
+# --output_metric_file eval_result/dev.json
 
 cd ./dstc8-schema-guided-dialogue/ && pip install -r ./sgd_x/requirements.txt && python3 -m sgd_x.generate_sgdx_dialogues  && cd .. # step 2 generate sgd-x
+
+\cp -r ./symbolic-tod/dstc8-changed-code/generate_sgdx_dialogues.py ./dstc8-schema-guided-dialogue/sgd_x/generate_sgdx_dialogues.py
+\cp -r ./symbolic-tod/dstc8-changed-code/utils.py ./dstc8-schema-guided-dialogue/sgd_x/utils.py
 
 mkdir ./data/ && mkdir ./data/sgd/ && mkdir ./data/processed/ && mkdir ./data/sgd/v0/ \
 && mkdir ./data/sgd/v1/ && mkdir ./data/sgd/v2/ && mkdir ./data/sgd/v3/ && mkdir ./data/sgd/v4/ \
