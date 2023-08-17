@@ -5,6 +5,7 @@
 /data
 /log
 /generator
+/output_dir
 *.lock
 
 # Byte-compiled / optimized / DLL files
