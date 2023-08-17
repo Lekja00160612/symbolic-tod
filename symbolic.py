@@ -958,7 +958,7 @@ def generate_data(item_desc):
                         logging.debug(per_frame_turn_info)
                         all_turns_per_frame.extend(copy.deepcopy(per_frame_turn_info))
 
-                write_examples(example_filter(all_turns_per_frame), out_file)
+        write_examples(example_filter(all_turns_per_frame), out_file)
 
 def set_log_dir():
     if not os.path.exists(FLAGS.log_folder):

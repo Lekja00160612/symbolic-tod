@@ -83,5 +83,6 @@ done
 
 python -m experiment.evaluate --dstc8_data_dir ../data/processed/v0/ --eval_set dev
 
+python -m experiment.dataloader --prompt_file=./prompt.txt --num_workers=20 --encoder_seq_length=2048 --decoder_seq_length=300 --get_statistic=False
 
 python3 -m experiment.train
