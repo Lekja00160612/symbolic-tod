@@ -1,21 +1,12 @@
+conda create -n symbolic_tod python=3.11 -y
+conda activate symbolic_tod
+
 cd symbolic-tod && pip install -r requirements.txt && cd .. # step 0
-# git clone https://github.com/google-research/task-oriented-dialogue.git
 git clone https://github.com/google-research-datasets/dstc8-schema-guided-dialogue.git # step 1 get dataset
-# git clone https://github.com/budzianowski/multiwoz.git
 
 
-### Test evaluate script
-# git clone https://github.com/google-research/google-research.git
-# cp -R ./google-research/schema_guided_dst/ ./schema_guided_data
-# rm -rf google-research
-# python3 -m schema_guided_data.evaluate \
-# --dstc8_data_dir dstc8-schema-guided-dialogue \
-# --prediction_dir dstc8-schema-guided-dialogue/test \
-# --eval_set test \
-# --output_metric_file eval_result/dev.json
-
-cd ./dstc8-schema-guided-dialogue/ && pip install -r ./sgd_x/requirements.txt && python3 -m sgd_x.generate_sgdx_dialogues  && cd .. # step 2 generate sgd-x
-
+cd ./dstc8-schema-guided-dialogue/ && pip install -r ./sgd_x/requirements.txt && python3 -m sgd_x.generate_sgdx_dialogues  && cd .. 
+# step 2 generate sgd-x
 \cp -r ./symbolic-tod/dstc8-changed-code/generate_sgdx_dialogues.py ./dstc8-schema-guided-dialogue/sgd_x/generate_sgdx_dialogues.py
 \cp -r ./symbolic-tod/dstc8-changed-code/utils.py ./dstc8-schema-guided-dialogue/sgd_x/utils.py
 
@@ -31,8 +22,6 @@ cp -R ./dstc8-schema-guided-dialogue/sgd_x/data/v5/ ./data/sgd/
 cp -R ./dstc8-schema-guided-dialogue/train/ ./data/sgd/v0/
 cp -R ./dstc8-schema-guided-dialogue/dev/   ./data/sgd/v0/
 cp -R ./dstc8-schema-guided-dialogue/test/  ./data/sgd/v0/
-
-
 
 for i in {0..5}
 do
@@ -66,26 +55,10 @@ do
 done
 
 ### Testing
-for split in dev
-do
-    for i in {0..5}
-    do
-        python3 ./symbolic-tod/symbolic.py \
-        --sgd_file="./data/sgd/v$i/$split" \
-        --schema_file="./data/processed/v$i/$split/schema.json" \
-        --output_file="./data/processed/v$i/$split/$split.txt" \
-        --log_folder="./data/processed/v$i/$split/data_log/" \
-        --delimiter== \
-        --symbolize_level=action_value \
-        --level=dst \
-        --data_format=full_desc \
-        --multiple_choice=1a \
-        --alsologtostderr
-    done
-done
+
 
 python -m experiment.evaluate --dstc8_data_dir ../data/processed/v0/ --eval_set dev
 
-python -m experiment.dataloader --prompt_file=./prompt.txt --num_workers=20 --encoder_seq_length=2048 --decoder_seq_length=300 --get_statistic=False
+python -m experiment.dataloader --prompt_file=./prompt.txt --num_workers=4 --encoder_seq_length=2048 --decoder_seq_length=300 --get_statistic=False
 
 python3 -m experiment.train

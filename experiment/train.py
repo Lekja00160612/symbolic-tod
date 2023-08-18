@@ -10,39 +10,35 @@ from datasets import Dataset
 
 flags = flags.FLAGS
 
-def train(dataset: Dataset):
+def train(dataset: Dataset, experiment: str):
     training_args = TrainingArguments(
-        output_dir="./output_dir/",
+        output_dir=f"./output_dir/{experiment}",
         learning_rate=1e-5,
         num_train_epochs=1,
         weight_decay=0.01,
         max_steps=500,
         # 128 * 2 * 8 = 2048
         # 173491 * 6 /2048 ~= 500
-        per_device_train_batch_size=int(8 / 2 / 2),
-        gradient_accumulation_steps=int(128 * 2 *2),
+        per_device_train_batch_size=int(8 ),
+        gradient_accumulation_steps=int(128 ),
 
         save_steps=40,
         # logging step
         logging_steps=1,
 
         # precision_setting
-        # bf16=True,
+        bf16=True,
         # fp16=True,
         optim="adamw_torch_fused",
 
         dataloader_num_workers=flags.num_workers # 4 cpu cores
     )
 
-    model = AutoModelForSeq2SeqLM.from_pretrained(flags.model_path, device_map="auto",) # torch_dtype=torch.float16)
+    model = AutoModelForSeq2SeqLM.from_pretrained(flags.model_path, device_map="auto", torch_dtype=torch.float16)
     tokenizer = AutoTokenizer.from_pretrained(flags.model_path)
+    tokenizer.model_max_length = flags.encoder_seq_length
+    
     data_collator = DataCollatorForSeq2Seq(tokenizer, model, max_length=2048)
-    def preprocess_function(examples, tokenizer: PreTrainedTokenizer):
-        model_inputs = tokenizer(examples["inputs"], max_length=flags.encoder_seq_length, padding="max_length", truncation=True)
-        labels = tokenizer(text_target=examples["target"], max_length=flags.decoder_seq_length, padding="max_length", truncation=True)
-        model_inputs["labels"] = labels["input_ids"]
-        return model_inputs
-    dataset = dataset.map(partial(preprocess_function, tokenizer=tokenizer), batched=True, num_proc=flags.num_workers).shuffle()
 
     trainer = Trainer(
         model=model,
@@ -59,7 +55,7 @@ def train(dataset: Dataset):
 
 def main(_):
     # data_loader = get_dataset("train", flags.data_path + "v0")
-    dataset = get_merged_dataset("train", flags.data_path, False)
+    dataset = get_merged_dataset("train", flags.data_path, shuffle=True, to_tokens=True)
     # data_loader = DataLoader(dataset,)
     # for i in data_loader:
     #     print(i)

@@ -23,6 +23,17 @@ def generate_dataset(data_path: str=None, split: str="train"):
             logging.info(f"{index}: {components[2].split()}")
             yield {"inputs": components[0].strip(), "target": components[1].strip(), "meta": components[2].strip()}
 
+
+def filter_length(example, encoder_seq_length: int, decoder_seq_length: int, tokenizer: PreTrainedTokenizer, get_statistic: bool=True):
+    input_token_length = len(tokenizer(example["inputs"]).input_ids)
+    output_token_length = len(tokenizer(example["target"]).input_ids)
+    if get_statistic:
+        global output_length
+        global input_length
+        output_length.append(input_token_length)
+        input_length.append(output_token_length)
+    return (input_token_length <= encoder_seq_length and output_token_length <= decoder_seq_length)
+
 def add_prompt(example, prompts: Dict, tokenizer: PreTrainedTokenizer, prompt_offset: int=3,):
     prompts_keys = list(prompts.keys())
 
@@ -46,7 +57,7 @@ def add_prompt(example, prompts: Dict, tokenizer: PreTrainedTokenizer, prompt_of
     return example
 
 DATA_STAGE = Literal["raw","add_prompt"]
-def get_dataset(split: str=None, data_path: str=None, shuffle: bool=True, dataset_stage: DATA_STAGE="add_prompt"):
+def get_dataset(split: str=None, data_path: str=None, shuffle: bool=True, dataset_stage: DATA_STAGE="add_prompt", to_tokens: bool=True):
 
     ds = Dataset.from_generator(
         generate_dataset,
@@ -74,28 +85,30 @@ def get_dataset(split: str=None, data_path: str=None, shuffle: bool=True, datase
         parameters = {"tokenizer": tokenizer, "prompts": prompts}
         ds_filtered = ds_filtered.map(partial(add_prompt, **parameters), batched=False, num_proc=flags.num_workers)
 
+    if to_tokens:
+        parameters = {"tokenizer": tokenizer}
+        ds_filtered = ds_filtered.map(partial(preprocess_function, **parameters), num_proc=flags.num_workers)
+
     if shuffle:
         ds_filtered = ds_filtered.shuffle()
 
     return ds_filtered
 
-def get_merged_dataset(split: str=None, data_path: str=None, shuffle: bool=True, dataset_stage: DATA_STAGE="add_prompt") -> Dataset:
+def preprocess_function(example, tokenizer: PreTrainedTokenizer):
+    model_inputs = tokenizer(example["inputs"], max_length=flags.encoder_seq_length, padding="max_length", truncation=True)
+    labels = tokenizer(text_target=example["target"], max_length=flags.decoder_seq_length, padding="max_length", truncation=True)
+    model_inputs["labels"] = labels["input_ids"]
+    return model_inputs
+    
+
+def get_merged_dataset(split: str=None, data_path: str=None, shuffle: bool=True, dataset_stage: DATA_STAGE="add_prompt", to_tokens: bool=True) -> Dataset:
     versions = ["v0", "v1", "v2", "v3", "v4", "v5"]
     ds_list = []
     for version in versions:
-        ds = get_dataset(split,f"{data_path}{version}/",shuffle,dataset_stage)
+        ds = get_dataset(split,f"{data_path}{version}/",shuffle,dataset_stage,to_tokens)
         ds_list.append(ds)
-    return concatenate_datasets(ds_list)
-
-def filter_length(example, encoder_seq_length: int, decoder_seq_length: int, tokenizer: PreTrainedTokenizer, get_statistic: bool=True):
-    input_token_length = len(tokenizer(example["inputs"]).input_ids)
-    output_token_length = len(tokenizer(example["target"]).input_ids)
-    if get_statistic:
-        global output_length
-        global input_length
-        output_length.append(input_token_length)
-        input_length.append(output_token_length)
-    return (input_token_length <= encoder_seq_length and output_token_length <= decoder_seq_length)
+    dataset = concatenate_datasets(ds_list)
+    return dataset
     
 def main(_):
     if flags.get_statistic:

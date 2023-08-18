@@ -12,7 +12,7 @@ flags.DEFINE_boolean("joint_acc_across_turn", True, "Whether to allow multiple t
 flags.DEFINE_boolean("use_fuzzy", True, "Use fuzzy string matching for non-categorical slot evaluate")
 flags.DEFINE_integer("encoder_seq_length", 2048, "maximum encoder input length")
 flags.DEFINE_integer("decoder_seq_length", 300, "maximum decoder input length")
-flags.DEFINE_integer("num_workers", 20, "how much processes to execute data processing script, greatly depends on CPU core number")
+flags.DEFINE_integer("num_workers", 4, "how much processes to execute data processing script, greatly depends on CPU core number")
 
 flags.DEFINE_string("dstc8_data_dir", None, "dstc directory to get both data and schema")
 flags.DEFINE_string("eval_set", None, "Test or Dev set")
