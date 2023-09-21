@@ -1,4 +1,5 @@
 natsort
+frozendict
 absl-py
 transformers[torch]
 datasets

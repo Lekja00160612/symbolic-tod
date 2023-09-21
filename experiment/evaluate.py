@@ -7,6 +7,8 @@ from enum import Enum
 
 from absl import logging, flags, app
 import numpy as np
+from transformers import PreTrainedModel, PreTrainedTokenizer, AutoModelForSeq2SeqLM, AutoTokenizer
+from natsort import humansorted
 from experiment import metrics
 import experiment.flags
 
@@ -53,11 +55,6 @@ def compute_f1(sequence: List[F1]):
     else:
         f1 = 0
     return metrics.F1Scores(f1=f1,recall=recall,precision=precision)
-
-pseudo_input = "[params] p1=address of restaurant; p30=phone number to contact restaurant; p33=tentative date of restaurant reservation; p41=the category of food offered by the restaurant; p43=whether the restaurant has outdoor seating available 43a) false 43b) true; p48=average user rating for restaurant on a scale of 5; p68=number of seats to reserve at the restaurant; p92=city where the restaurant is located; p99=tentative time of restaurant reservation; p102=whether the restaurant has adequate vegetarian options 102a) true 102b) false; p121=name of the restaurant; p129=price range for the restaurant 129a) cheap 129b) pricey 129c) moderate 129d) ultra high-end	[useracts] u17=user select item; u39=user inform undefined information; u41=user request undefined information; u45=user inform p102; u53=user thank; u58=user goodbye; u60=user request p129; u106=user deny the offer; u107=user inform p121; u109=user inform p43; u114=user request alternative items; u138=user request p1; u139=user request p48; u144=user request p41; u153=user inform p41; u166=user inform p33; u170=user request p102; u176=user want to reserverestaurant; u178=user want to findrestaurants; u191=user inform p99; u215=user inform p92; u218=user request p43; u223=user request p30; u224=user agree to the offer; u242=user inform p68; u263=user inform p129	[sysacts] s19=inform p43; s28=ask to confirm value of p33; s32=ask to confirm value of p68; s64=ask to confirm undefined information; s65=ask to confirm value of p92; s75=ask to confirm value of p121; s93=inform number of items satified user; s123=request p99; s125=offer user p121; s128=goodbye user; s136=request undefined information; s146=ask to confirm value of p99; s157=request p121; s163=ask user if they need anything more; s177=query findrestaurants api; s201=request p92; s206=inform p102; s208=offer user reserverestaurant; s212=inform p1; s213=notify failure; s215=offer user p99; s232=inform p41; s246=inform p129; s248=inform p48; s250=inform p30; s255=query reserverestaurant api; s268=notify success; s281=inform undefined information; s284=offer user p92; s302=request p41; s305=offer user p33; s313=offer user p68	[dependencies] u153, u215 -> s177; s65, s75, s125, s146, s215, s284, u107, u191, u215 -> s255	[targetacts] s255	[constraints] user request param x, system inform the param x; target actions depend on param x and user did not inform, system request param x; after offer an item and user like the item, offer user to purchase	[conversation] [user] i want to make a restaurant reservation for vt8u3s9v people at 8y0ep779."
-pseudo_ref = "[states] p68=vt8u3s9v; p99=8y0ep779	[history] u176, u191, u242	[nextacts] s157, s201"
-pseudo_hyp = "[states] p68=vt8u3s9v; p99=8y0ep779	[history] u176, u191, u242	[nextacts] s157, s201"
-pseudo_meta = "dialogue_id:1_00000	turn_id:1	frame_domain:restaurants_2	frame_id:0"
 
 def compare_slot_values(ref_slot_values: Dict[str,str], 
                         hyp_slot_values: Dict[str,str], 
@@ -214,7 +211,7 @@ def parse_input(input: str, take_params_is_categorical=True, take_user_request_a
             action_id, action_desc = action
             if re.match(r"query \w+ api", action_desc.strip()):
                 system_query_action_ids.append(action_id)
-        return_dict["system_query_action_ids"] = user_request_action_ids
+        return_dict["system_query_action_ids"] = system_query_action_ids
     return return_dict
 
 def get_per_example_metrics_score(input: str, label: str, predict: str, 
@@ -223,8 +220,13 @@ def get_per_example_metrics_score(input: str, label: str, predict: str,
                                request_slots_f1=True, 
                                ):
     label_state, label_history, label_nextacts = label.split(output_part_delimiter)
-    predict_state, predict_history, predict_nextacts = predict.split(output_part_delimiter)
-    logging.debug(f"{predict_state=}")
+    predict_components = predict.split(output_part_delimiter)
+    predict_state =  [component for component in predict_components if state_prefix in component]
+    predict_state = predict_state[0] if len(predict_state) >= 1 else state_prefix
+    predict_history = [component for component in predict_components if history_prefix in component]
+    predict_history = predict_history[0] if len(predict_history) >= 1 else history_prefix
+    predict_nextacts = [component for component in predict_components if nextacts_prefix in component]
+    predict_nextacts = predict_nextacts[0] if len(predict_nextacts) >= 1 else nextacts_prefix
     assert state_prefix in label_state and state_prefix in predict_state, \
             f"Expecting both label_state and predict_state to have the correct prefix ({state_prefix}), got:\n{label_state}\n{predict_state}"
     assert history_prefix in label_history and history_prefix in predict_history, \
@@ -287,6 +289,13 @@ def get_per_example_metrics_score(input: str, label: str, predict: str,
         predict_next_action_ids = label_nextacts.removeprefix(nextacts_prefix).split(action_delimiter)
         predict_next_action_ids = [action.strip() for action in predict_next_action_ids
                                     if action.strip() in system_query_action_ids]
+        ## TODO: FIX
+        # old_length = len(label_next_action_ids)
+        label_next_action_ids = list(set(label_next_action_ids))
+        new_length = len(label_next_action_ids)
+        # if old_length != new_length:
+        #     print(label)
+        predict_next_action_ids = list(set(predict_next_action_ids))
         # by default, at most 1 query is available
         if len(label_next_action_ids) == 1:
             if len(predict_next_action_ids) == 1 and predict_next_action_ids[0] == label_next_action_ids[0]:
@@ -296,7 +305,7 @@ def get_per_example_metrics_score(input: str, label: str, predict: str,
                 # FALSE NEGATIVE
                 example_metrics[metrics.QUERY_MATCH] = F1.FN
         else:
-            assert len(label_next_action_ids) == 0
+            assert len(label_next_action_ids) == 0, f"{len(label_next_action_ids)}, {label_next_action_ids}, {label}, {input}"
             if len(predict_next_action_ids) == 0:
                 # TRUE NEGATIVE
                 example_metrics[metrics.QUERY_MATCH] = F1.TN
@@ -367,10 +376,10 @@ def get_metrics(inputs: List[str], labels: List[str], predicts: List[str], meta_
                     if issubclass(type(metric_value),F1):
                         if metric_collections[domain_key][
                             metric_key][dialogue_id][turn_id] != 1.0:
-                            assert metric_collections[domain_key][
-                            metric_key][dialogue_id][turn_id] == metric_value
+                            (metric_collections[domain_key][
+                                metric_key][dialogue_id][turn_id]).append(metric_value)
                         metric_collections[domain_key][
-                            metric_key][dialogue_id][turn_id] = metric_value
+                            metric_key][dialogue_id][turn_id] = [metric_value]
                     else:
                         metric_collections[domain_key][
                                 metric_key][dialogue_id][turn_id] *= metric_value
@@ -383,7 +392,7 @@ def get_metrics(inputs: List[str], labels: List[str], predicts: List[str], meta_
                 for dialogue, turn_dict in dialogue_dict.items():
                     dialogue_query = []
                     for turn, metric_value in turn_dict.items(): 
-                        dialogue_query.append(metric_value)    
+                        dialogue_query += metric_value   
                     dialogue_f1_score = compute_f1(dialogue_query)
                     metric_values.append(dialogue_f1_score.f1)
             else:
@@ -407,11 +416,14 @@ def get_service_set(schema_path):
         for service in schema:
             service_set.add(service["service_name"])
     return service_set
+
 def get_in_domain_services(schema_path_1, schema_path_2):
     """Get the set of common services between two schemas."""
     return get_service_set(schema_path_1) & get_service_set(schema_path_2)
 
-def get_evaluate_data():
+from transformers import PreTrainedModel, PreTrainedTokenizer
+
+def get_evaluate_data(model: PreTrainedModel, tokenizer: PreTrainedTokenizer, predict_file: str):
     inputs = []
     outputs = []
     predicts = []
@@ -422,21 +434,42 @@ def get_evaluate_data():
             inputs.append(components[0])
             outputs.append(components[1])
             meta_data.append(components[2])
-    predicts = outputs
+    if os.path.exists(predict_file):
+        with open(predict_file, "w+") as f:
+            predicts = f.readlines()
+    else:
+        predict_tokens = list(map(lambda x: model.generate(**tokenizer(x, return_tensors='pt'),max_new_tokens=300), inputs))
+        print(predict_tokens[0][0])
+        predicts = tokenizer.decode(predict_tokens[0][0])
+        with open(predict_file, "w+") as f:
+            f.writelines(predicts)
+    
     return inputs, outputs, predicts, meta_data
 
 def main(_):    
     in_domain_services = get_in_domain_services(
         os.path.join(FLAGS.dstc8_data_dir, FLAGS.eval_set, "schema.json"),
         os.path.join(FLAGS.dstc8_data_dir, "train", "schema.json")
-    )
-    inputs, labels, predicts, meta_data = get_evaluate_data()
-    all_metric_aggregate, _ = get_metrics(inputs, labels, predicts, meta_data,
-                                        in_domain_services)
+    ) 
+    import torch
+    for checkpoint_dir in humansorted([directory for directory in os.listdir(f"./{FLAGS.output_dir}/{FLAGS.experiment_name}") 
+                                       if "checkpoint" in directory]):
+        model = AutoModelForSeq2SeqLM.from_pretrained(f"./{FLAGS.output_dir}/{FLAGS.experiment_name}/{checkpoint_dir}", torch_dtype=torch.bfloat16)
+        
+        tokenizer = AutoTokenizer.from_pretrained(FLAGS.model_path)
+        inputs, labels, predicts, meta_data = get_evaluate_data(model, 
+                                                                tokenizer, 
+                                                                f"./{FLAGS.output_dir}/{FLAGS.experiment_name}/result/{checkpoint_dir}.txt")
+        all_metric_aggregate, _ = get_metrics(inputs, labels, predicts, meta_data,
+                                            in_domain_services)
+        with open(f"./{FLAGS.output_dir}/{FLAGS.experiment_name}/result/{checkpoint_dir}.json", "w+") as f:
+            json.dump(all_metric_aggregate, f, indent=4)
     
 if __name__ == "__main__":
     flags.mark_flag_as_required("dstc8_data_dir")
     flags.mark_flag_as_required("eval_set")
+    flags.mark_flag_as_required("output_dir")
+    flags.mark_flag_as_required("experiment_name")
     app.run(main)
 # logging.debug(compute_f1([F1.FN,F1.TP,F1.TN,F1.FP,F1.FN,F1.TP,F1.TN,F1.FP,F1.FN,F1.TP,F1.TN,F1.FP,F1.FN,F1.TP,F1.TN,F1.FP]))
 # logging.debug(get_per_example_metrics_score(pseudo_input,pseudo_ref,pseudo_hyp))

@@ -1,3 +1,4 @@
+# V2
 # coding=utf-8
 # Copyright 2021 The Google Research Authors.
 #
@@ -21,12 +22,13 @@ Example usage: From the `.../dstc8-schema-guided-dialogue/` directory, run
 import collections
 import copy
 import os
+import shutil
 from typing import Dict, Sequence, Tuple
 
 from absl import app
 from absl import flags
 from sgd_x import utils
-from tensorflow.io import gfile
+# from tensorflow.io import gfile
 
 _ORIGINAL_DATA_DIR = flags.DEFINE_string(
     'original_data_dir', './', 'Path to directory of Original SGD data.')
@@ -127,8 +129,8 @@ def create_modified_dialogues(
             for action in frame.get('actions', []):
               # Replace values if slot is intent.
               if 'slot' in action:
-                if action['slot'] == 'intent' and (action["act"] not in ["OFFER_INTENT", "INFORM_INTENT"]):
-                  assert len(action["values"]) > 0
+                if action['slot'] == 'intent' and (action["act"] in ["OFFER_INTENT", "INFORM_INTENT"]):
+                  assert len(action["values"]) > 0, f'{action}, {dialogue}'
                   utils.replace_list_elements_with_mapping(
                       action.get('canonical_values', []), intent_to_name)
                   utils.replace_list_elements_with_mapping(
@@ -190,12 +192,16 @@ def main(argv: Sequence[str]) -> None:
       var_output_dir = os.path.join(_OUTPUT_DATA_DIR.value, var)
 
       # Make directory if not exists.
-      gfile.makedirs(os.path.join(var_output_dir, subdir))
+      # gfile.makedirs(os.path.join(var_output_dir, subdir))
+      if not os.path.exists(os.path.join(var_output_dir, subdir)):
+        os.makedirs(os.path.join(var_output_dir, subdir))
 
       # Copy over schema file if not exists.
       var_schema_path = os.path.join(var_output_dir, subdir, 'schema.json')
-      if not gfile.exists(var_schema_path):
-        gfile.copy(
+      if not os.path.exists(var_schema_path): # gfile.exists(var_schema_path):
+        
+        # gfile.copy(
+        shutil.copy(
             os.path.join(_VARIANT_DATA_DIR.value, var, subdir, 'schema.json'),
             var_schema_path,
             overwrite=False)

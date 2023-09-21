@@ -73,8 +73,15 @@ flags.DEFINE_enum(
     "non-categorical: Symbolize only non-categorical slot value."
     "all: Symbolize both categorical and non-categorical slot value.",
 )
+
 flags.DEFINE_bool(
     "sort_id",
     True,
     "Whether to sort <output> position based on id position from the input",
+)
+
+flags.DEFINE_float(
+    "symbolize_percent",
+    0.3,
+    "Percent value into symbol.",
 )

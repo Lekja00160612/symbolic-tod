@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 from enum import StrEnum
 from collections import defaultdict
 class PromptCategory(StrEnum):
@@ -13,7 +13,7 @@ class PromptCategory(StrEnum):
     params = "params"
 
     # Out
-    state = "state"
+    states = "states"
     history = "history"
     nextacts = "nextacts"
 
@@ -52,9 +52,9 @@ prompts = {
         f"[{PromptCategory.params}]: context information that the system must capture in the [{PromptCategory.conversation}]",
         f"[{PromptCategory.params}] has format <param_id>=<param_description>"
     ],
-    PromptCategory.state: [
-        f"[{PromptCategory.state}]: includes all captured <param_value> in [{PromptCategory.conversation}]",
-        f"[{PromptCategory.state}] is formatted as <param_id>=<param_value>"
+    PromptCategory.states: [
+        f"[{PromptCategory.states}]: includes all captured <param_value> in [{PromptCategory.conversation}]",
+        f"[{PromptCategory.states}] is formatted as <param_id>=<param_value>"
     ],
     PromptCategory.history: [
         f"[{PromptCategory.history}] contains all actions appeared in [{PromptCategory.conversation}] and symbolized by [{PromptCategory.useracts}] and [{PromptCategory.sysacts}]"
@@ -78,3 +78,4 @@ def get_prompts(data_path: str=None, file_name: str="prompt.txt") -> Dict[str,st
             category, prompt = line.strip().split("\t")
             prompts[category].append(prompt)
         return prompts
+    

@@ -1,3 +1,4 @@
+# V2
 # coding=utf-8
 # Copyright 2021 The Google Research Authors.
 #
@@ -17,10 +18,11 @@
 
 import json
 import os
+import glob
 from typing import Any, Dict, List
 
 from absl import logging
-from tensorflow.io import gfile
+# from tensorflow.io import gfile
 
 DialoguesDict = Dict[str, Any]
 Schemas = List[Any]
@@ -30,7 +32,8 @@ def load_schemas_to_dict(data_dir: str, subdir: str,
                          output_dict: Dict[str, Schemas]) -> None:
   """Load schema json from a given subdir into a provided dict."""
   schema_file_path = os.path.join(data_dir, subdir, "schema.json")
-  with gfile.GFile(schema_file_path) as f:
+  # with gfile.GFile(schema_file_path) as f:
+  with open(schema_file_path) as f:
     output_dict[subdir] = json.load(f)
     logging.info("Loaded schema file %s", schema_file_path)
 
@@ -38,10 +41,12 @@ def load_schemas_to_dict(data_dir: str, subdir: str,
 def load_dialogues_to_dict(data_dir: str, subdir: str,
                            output_dict: Dict[str, DialoguesDict]) -> None:
   """Load dialogue jsons from a given subdir into a provided dict."""
-  dialogue_files = gfile.glob(os.path.join(data_dir, subdir, "dialogues*.json"))
+  # dialogue_files = gfile.glob(os.path.join(data_dir, subdir, "dialogues*.json"))
+  dialogue_files = glob.glob(os.path.join(data_dir, subdir, "dialogues*.json"))
   for dialogue_file_path in dialogue_files:
     dialogue_filename = os.path.basename(dialogue_file_path)
-    with gfile.GFile(dialogue_file_path) as f:
+    # with gfile.GFile(dialogue_file_path) as f:
+    with open(dialogue_file_path) as f:
       output_dict[subdir][dialogue_filename] = json.load(f)
     logging.info("Loaded dialogue file %s", dialogue_file_path)
 
@@ -76,10 +81,14 @@ def write_dialogue_dir(data_dir: str, subdir: str,
                        output_dict: Dict[str, DialoguesDict]) -> None:
   """Write dialogues from json object into files."""
   destination_dir = os.path.join(data_dir, subdir)
-  gfile.makedirs(destination_dir)
+  # gfile.makedirs(destination_dir)
+  if not os.path.exists(destination_dir):
+    os.makedirs(destination_dir)
+  
   for dialogue_filename in output_dict[subdir]:
     dialogue_file = os.path.join(destination_dir, dialogue_filename)
-    with gfile.GFile(dialogue_file, "w") as output_dialogue_file:
+    # with gfile.GFile(dialogue_file, "w") as output_dialogue_file:
+    with open(dialogue_file, "w") as output_dialogue_file:
       json.dump(
           output_dict[subdir][dialogue_filename],
           output_dialogue_file,
@@ -93,9 +102,12 @@ def write_schema_dir(data_dir: str, subdir: str,
                      output_dict: Dict[str, Any]) -> None:
   """Write schemas from json object into files."""
   destination_dir = os.path.join(data_dir, subdir)
-  gfile.makedirs(destination_dir)
+  # gfile.makedirs(destination_dir)
+  if not os.path.exists(destination_dir):
+    os.makedirs(destination_dir)
   schema_file = os.path.join(destination_dir, "schema.json")
-  with gfile.GFile(schema_file, "w") as output_schema_file:
+  # with gfile.GFile(schema_file, "w") as output_schema_file:
+  with open(schema_file, "w") as output_schema_file:
     json.dump(
         output_dict[subdir],
         output_schema_file,

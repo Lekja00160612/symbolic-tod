@@ -70,7 +70,6 @@ class TurnProcessor:
         # Save labeled state
         self.frames = frames
         self.frame = domain_frame
-        # logging.fatal(f"{self.frame['state']}")
         if speaker == "user":
             self.state = self.frame["state"]
         # Name of currenty process domain
@@ -194,7 +193,8 @@ class TurnProcessor:
                         )
                     ):
                         for param_name in param_to_id.keys():
-                            if param_name in desc:
+                            # TODO: fix 
+                            if param_name in desc and "_" not in desc.replace(param_name, param_to_id[param_name]):
                                 logging.debug(
                                     f"{param_name} is replaced with {param_to_id[param_name]}"
                                 )
@@ -380,8 +380,9 @@ class TurnProcessor:
                 param_id, param_value, param_is_categorical = param
                 # if param is categorical and param_symbolize_level is non-categorical
                 if (
-                    param_is_categorical
-                    and FLAGS.param_symbolize_level == "non-categorical"
+                    (param_is_categorical
+                     and FLAGS.param_symbolize_level == "non-categorical")
+                    or random.random() > FLAGS.symbolize_percent
                 ):
                     continue
                 symbolize_value = symbolize()
@@ -506,26 +507,33 @@ class TurnProcessor:
             # We know there is only one frame for the last history turn (system turn)
             for domain, actions_list in self.state_dict["history"][-1].items():
                 next_actions_desc += actions_list
+            
             # During service call, system will offer multiple slots,
             # however we want our system to stop at service calling and nothing further
             # therefore it is necessary to eliminate all offer actions within this turn system actions
             # and replace them with only one action - db call.
             previous_action_length = len(next_actions_desc)
+            
             next_actions_desc = [
                 action
                 for action in next_actions_desc
                 if (
+                    # if the domain is ood, remove it
+                    not is_in_domain(previous_domain, action)
                     # eliminate if action in any of "offer", "notify", "notify_success", "notify_failure", "inform_count"
                     # "offer_intent" is a controversial decision, should dialogue manager take care of this or the state tracker?
                     # for the sake of sanity, in this experiment, we do not keep "offer_intent" in next_action
-                    not any(
-                        eliminate_action in action
-                        for eliminate_action in NEXTACTS_ELIMINATE_ACTIONS_QUERY_RELATED
-                    )
-                    # keep the action if the action is "offer_intent", we will remove it latter
-                    or any(
-                        exclude_eliminate_action in action
-                        for exclude_eliminate_action in NEXTACTS_ELIMINATE_ACTIONS
+                    or
+                    (
+                        not any(
+                            eliminate_action in action
+                            for eliminate_action in NEXTACTS_ELIMINATE_ACTIONS_QUERY_RELATED
+                        )
+                        # keep the action if the action is "offer_intent", we will remove it latter
+                        or any(
+                            exclude_eliminate_action in action
+                            for exclude_eliminate_action in NEXTACTS_ELIMINATE_ACTIONS
+                        )
                     )
                 )
             ]
@@ -560,8 +568,11 @@ class TurnProcessor:
                         exclude_eliminate_action in action
                         for exclude_eliminate_action in NEXTACTS_ELIMINATE_ACTIONS
                     )
+                    and is_in_domain(previous_domain, action)
                 )
             ]
+            logging.debug(f"{self.turn_id}, {previous_domain}, {next_actions_desc}")
+            
             # Resolve actions only if it matched with previous_domain
             # LONG EXPLAIN
             # The reason behind this is that only user has the right to transit domain
@@ -809,7 +820,7 @@ def write_examples(turn_list: List[TurnInfo], out_file) -> None:
             )
             if FLAGS.lowercase:
                 example = example.lower()
-
+            example = example.replace("\n", "    ")
             logging.debug(example)
             out_file.write(f"{example}\n")
 
@@ -938,8 +949,11 @@ def generate_data(item_desc):
             with open(sgd_file, "r", encoding="utf-8") as sgd_in:
                 dialogues = json.load(sgd_in)
                 preprocess_dialogues(dialogues)
-                # logging.info(json.dumps(dialogues, indent=4))
                 for dialogue in dialogues:
+                    # if dialogue["dialogue_id"] != "8_00103":
+                    #     continue
+                    # with open(f"{sgd_file}.test", "w+") as f:
+                    #     json.dump(dialogue, f, indent=4)
                     state_dict = {
                         "history": [],
                         "conversation": [],
